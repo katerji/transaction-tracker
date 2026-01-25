@@ -499,14 +499,15 @@
 
         .all-transaction-date {
             flex-shrink: 0;
-            width: 80px;
-            text-align: center;
+            width: 130px;
+            text-align: left;
         }
 
         .date-day {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             color: #667eea;
+            line-height: 1.4;
         }
 
         .all-transaction-info {
@@ -858,22 +859,9 @@
                 html += '</div>'; // Close categories-section
             }
 
-            // All Transactions section
-            if (data.categories && data.categories.length > 0) {
-                // Collect all transactions from all categories
-                let allTransactions = [];
-                data.categories.forEach(function(cat) {
-                    if (cat.transactions && cat.transactions.length > 0) {
-                        cat.transactions.forEach(function(tx) {
-                            allTransactions.push(tx);
-                        });
-                    }
-                });
-
-                // Sort by date descending (most recent first)
-                allTransactions.sort(function(a, b) {
-                    return new Date(b.date) - new Date(a.date);
-                });
+            // All Transactions section - use pre-sorted data from backend
+            if (data.allTransactions && data.allTransactions.length > 0) {
+                const allTransactions = data.allTransactions;
 
                 if (allTransactions.length > 0) {
                     html += '<div class="all-transactions-section">';
@@ -881,20 +869,13 @@
                     html += '<div class="all-transactions-list">';
 
                     allTransactions.forEach(function(tx) {
-                        const txDate = new Date(tx.date);
-                        const dateStr = formatDate(txDate);
-                        const fullDate = txDate.toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                        });
+                        const dateTimeStr = formatDateTime(tx.date);
 
                         html +=
                             '<div class="all-transaction-item">' +
                             '<div class="all-transaction-row">' +
-                            '<div class="all-transaction-date" title="' + fullDate + '">' +
-                            '<div class="date-day">' + dateStr + '</div>' +
+                            '<div class="all-transaction-date">' +
+                            '<div class="date-day">' + dateTimeStr + '</div>' +
                             '</div>' +
                             '<div class="all-transaction-info">' +
                             '<div class="all-transaction-desc">' + escapeHtml(tx.description) + '</div>' +
@@ -944,6 +925,34 @@
 
         function formatDate(date) {
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function formatDateTime(dateTimeStr) {
+            // Parse datetime string - handles both "2026-01-25" and "2026-01-25 21:43:00"
+            let date;
+
+            if (dateTimeStr.includes(' ')) {
+                // Has time component: "2026-01-25 21:43:00"
+                const [datePart, timePart] = dateTimeStr.split(' ');
+                const [year, month, day] = datePart.split('-');
+                const [hours, minutes] = timePart.split(':');
+                date = new Date(year, month - 1, day, hours, minutes);
+            } else {
+                // Date only: "2026-01-25"
+                const [year, month, day] = dateTimeStr.split('-');
+                date = new Date(year, month - 1, day);
+            }
+
+            // Format: "Jan 25, 2:30 PM" or "Jan 25, 12:00 AM" if no time
+            const options = {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            };
+
+            return date.toLocaleString('en-US', options);
         }
 
         function escapeHtml(text) {
@@ -1320,20 +1329,13 @@
             // Rebuild HTML
             let html = '';
             allTransactions.forEach(function(tx) {
-                const txDate = new Date(tx.date);
-                const dateStr = formatDate(txDate);
-                const fullDate = txDate.toLocaleDateString('en-US', {
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                });
+                const dateTimeStr = formatDateTime(tx.date);
 
                 html +=
                     '<div class="all-transaction-item">' +
                     '<div class="all-transaction-row">' +
-                    '<div class="all-transaction-date" title="' + fullDate + '">' +
-                    '<div class="date-day">' + dateStr + '</div>' +
+                    '<div class="all-transaction-date">' +
+                    '<div class="date-day">' + dateTimeStr + '</div>' +
                     '</div>' +
                     '<div class="all-transaction-info">' +
                     '<div class="all-transaction-desc">' + escapeHtml(tx.description) + '</div>' +

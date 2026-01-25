@@ -37,6 +37,7 @@ type StatsResponse struct {
 	Count           int                 `json:"count"`
 	Categories      []CategoryStats     `json:"categories,omitempty"`
 	LastTransaction *TransactionSummary `json:"lastTransaction,omitempty"`
+	AllTransactions []Transaction       `json:"allTransactions,omitempty"`
 }
 
 type CategoryStats struct {

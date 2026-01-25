@@ -196,6 +196,32 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 		return categories[i].Total > categories[j].Total
 	})
 
+	// Query all transactions sorted by date descending for the flat list
+	allTxRows, err := c.db.Query(`
+		SELECT id, description, amount, transaction_date, category, confidence, billing_cycle, created_at
+		FROM transactions
+		WHERE billing_cycle = ?
+		ORDER BY transaction_date DESC, created_at DESC
+	`, currentCycle)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all transactions: %w", err)
+	}
+	defer allTxRows.Close()
+
+	var allTransactions []Transaction
+	for allTxRows.Next() {
+		var tx Transaction
+		if err := allTxRows.Scan(&tx.ID, &tx.Description, &tx.Amount, &tx.Date, &tx.Category, &tx.Confidence, &tx.BillingCycle, &tx.Timestamp); err != nil {
+			return nil, fmt.Errorf("failed to scan all transaction: %w", err)
+		}
+		allTransactions = append(allTransactions, tx)
+	}
+
+	if err := allTxRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating all transactions: %w", err)
+	}
+
 	// Query last transaction
 	var lastTx TransactionSummary
 	err = c.db.QueryRow(`
@@ -245,6 +271,7 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 		Count:           count,
 		Categories:      categories,
 		LastTransaction: lastTransaction,
+		AllTransactions: allTransactions,
 	}, nil
 }
 

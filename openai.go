@@ -49,7 +49,7 @@ const systemPrompt = `You are a financial transaction parser for UAE-based trans
 Parse the following message which may contain ONE or MORE transaction SMS messages and return ONLY a valid JSON array of transaction objects.
 
 Each transaction object must have these exact fields:
-- date: transaction date in YYYY-MM-DD format (infer current year if missing, use today's date if no date mentioned)
+- date: transaction datetime in YYYY-MM-DD HH:MM:SS format (use 00:00:00 if time not available, infer current year if missing)
 - description: merchant or transaction description
 - amount: numeric value CONVERTED TO AED as a number (positive for expenses, negative for income/deposits)
 - category: exactly ONE of these categories: "Food & Dining", "Transport", "Shopping", "Bills & Utilities", "Entertainment", "Health & Fitness", "Travel", "Cash Withdrawal", "Income/Transfer", "Unknown"
@@ -73,17 +73,25 @@ Parsing Rules:
 - Return ONLY the JSON array, no other text
 - Each SMS in the message should be parsed as a separate transaction
 
+Date/Time Parsing Examples:
+- "24/01/2026, 21:43" → "2026-01-24 21:43:00"
+- "24/01/2026 19:11:31" → "2026-01-24 19:11:31"
+- "Date: 24/01/2026, 11:05" → "2026-01-24 11:05:00"
+- "24/01/2026" (no time) → "2026-01-24 00:00:00"
+- Always use UAE timezone (Gulf Standard Time, GMT+4)
+- Format: YYYY-MM-DD HH:MM:SS (24-hour format)
+
 Example response for multiple transactions:
 [
   {
-    "date": "2026-01-25",
+    "date": "2026-01-25 14:30:00",
     "description": "Starbucks Dubai Mall",
     "amount": 25.50,
     "category": "Food & Dining",
     "confidence": 95
   },
   {
-    "date": "2026-01-25",
+    "date": "2026-01-25 09:15:00",
     "description": "Careem Ride",
     "amount": 35.00,
     "category": "Transport",

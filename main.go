@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -77,6 +79,14 @@ func loadConfig() (*Config, error) {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	log.Printf("[Server] Starting Transaction Tracker...")
+
+	// Load .env file if it exists (for local development)
+	// In production (Docker/Fly.io), environment variables are set directly
+	if err := godotenv.Load(); err != nil {
+		log.Printf("[Server] No .env file found or error loading it (this is normal in production): %v", err)
+	} else {
+		log.Printf("[Server] Loaded configuration from .env file")
+	}
 
 	config, err := loadConfig()
 	if err != nil {

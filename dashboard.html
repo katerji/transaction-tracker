@@ -25,7 +25,7 @@
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 600px;
+            max-width: 1000px;
             width: 100%;
             padding: 40px;
         }
@@ -76,6 +76,24 @@
             margin-bottom: 30px;
         }
 
+        .categories-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        @media (min-width: 768px) {
+            .categories-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (min-width: 1200px) {
+            .categories-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
         .section-title {
             font-size: 16px;
             font-weight: 600;
@@ -85,6 +103,10 @@
             border-bottom: 2px solid #f0f0f0;
         }
 
+        .category-wrapper {
+            margin-bottom: 10px;
+        }
+
         .category-item {
             display: flex;
             justify-content: space-between;
@@ -92,7 +114,6 @@
             padding: 15px;
             background: #f8f9fa;
             border-radius: 10px;
-            margin-bottom: 10px;
             transition: transform 0.2s;
         }
 
@@ -128,6 +149,250 @@
             color: #667eea;
         }
 
+        .category-item {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .expand-icon {
+            font-size: 14px;
+            margin-left: 10px;
+            transition: transform 0.3s ease;
+            color: #999;
+        }
+
+        .expand-icon.expanded {
+            transform: rotate(90deg);
+        }
+
+        .transactions-list {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            margin-top: 0;
+            padding: 0 15px;
+        }
+
+        .transactions-list.expanded {
+            max-height: 1000px;
+            margin-top: 10px;
+            padding: 0 15px;
+        }
+
+        .transaction-item {
+            background: white;
+            padding: 12px 15px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+            font-size: 14px;
+        }
+
+        .transaction-desc {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .transaction-details {
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .transaction-meta {
+            display: flex;
+            gap: 10px;
+        }
+
+        .transaction-amount {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .transaction-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-edit, .btn-delete {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-edit {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #5568d3;
+        }
+
+        .btn-delete {
+            background: #fee;
+            color: #c33;
+        }
+
+        .btn-delete:hover {
+            background: #fdd;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .btn-cancel, .btn-save, .btn-confirm {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .btn-cancel:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-save {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-save:hover {
+            background: #5568d3;
+        }
+
+        .btn-confirm {
+            background: #f44;
+            color: white;
+        }
+
+        .btn-confirm:hover {
+            background: #e33;
+        }
+
+        .delete-warning {
+            background: #fff9e6;
+            border-left: 4px solid #ffa500;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .delete-item {
+            font-weight: 600;
+            color: #333;
+            margin-top: 8px;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4caf50;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 2000;
+            opacity: 0;
+            transform: translateX(400px);
+            transition: all 0.3s ease;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast.hide {
+            opacity: 0;
+            transform: translateX(400px);
+        }
+
         .last-transaction {
             background: #fff9e6;
             border-left: 4px solid #ffd700;
@@ -152,56 +417,6 @@
         .last-transaction-details {
             font-size: 14px;
             color: #666;
-        }
-
-        .config-section {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-
-        .config-section label {
-            display: block;
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 8px;
-        }
-
-        .config-section input {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.2s;
-        }
-
-        .config-section input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn:active {
-            transform: translateY(0);
         }
 
         .loading {
@@ -237,9 +452,108 @@
             margin-top: 20px;
         }
 
-        @media (max-width: 600px) {
+        .refresh-btn {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+            font-size: 12px;
+            padding: 0;
+            margin-left: 5px;
+        }
+
+        .refresh-btn:hover {
+            color: #764ba2;
+        }
+
+        /* All Transactions Section */
+        .all-transactions-section {
+            margin-top: 30px;
+        }
+
+        .all-transactions-list {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .all-transaction-item {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .all-transaction-item:hover {
+            transform: translateX(2px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .all-transaction-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            gap: 15px;
+        }
+
+        .all-transaction-date {
+            flex-shrink: 0;
+            width: 80px;
+            text-align: center;
+        }
+
+        .date-day {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .all-transaction-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .all-transaction-desc {
+            font-weight: 500;
+            color: #333;
+            font-size: 15px;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .all-transaction-category {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .all-transaction-amount {
+            flex-shrink: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #667eea;
+            min-width: 100px;
+            text-align: right;
+        }
+
+        .all-transaction-actions {
+            flex-shrink: 0;
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-small {
+            padding: 6px 10px;
+            font-size: 12px;
+            min-width: auto;
+        }
+
+        @media (max-width: 768px) {
             .container {
                 padding: 20px;
+                margin: 10px;
             }
 
             .total-amount {
@@ -248,6 +562,82 @@
 
             .header h1 {
                 font-size: 24px;
+            }
+
+            .categories-grid {
+                grid-template-columns: 1fr !important;
+            }
+
+            .all-transaction-row {
+                gap: 10px;
+            }
+
+            .all-transaction-date {
+                width: 60px;
+            }
+
+            .date-day {
+                font-size: 12px;
+            }
+
+            .all-transaction-desc {
+                font-size: 14px;
+            }
+
+            .all-transaction-amount {
+                font-size: 14px;
+                min-width: 80px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+                border-radius: 15px;
+            }
+
+            .total-section {
+                padding: 20px;
+            }
+
+            .category-item {
+                padding: 12px;
+            }
+
+            .transaction-item {
+                padding: 10px 12px;
+            }
+
+            .all-transaction-row {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .all-transaction-date {
+                width: 100%;
+                text-align: left;
+                padding-bottom: 5px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+
+            .all-transaction-info {
+                width: 100%;
+                order: 2;
+            }
+
+            .all-transaction-amount {
+                order: 1;
+                text-align: left;
+                min-width: auto;
+            }
+
+            .all-transaction-actions {
+                width: 100%;
+                order: 3;
+                justify-content: flex-end;
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid #f0f0f0;
             }
         }
     </style>
@@ -259,58 +649,92 @@
             <p class="cycle-info">Billing Cycle Dashboard</p>
         </div>
 
-        <div class="config-section">
-            <label for="apiUrl">API URL:</label>
-            <input
-                type="text"
-                id="apiUrl"
-                placeholder="https://your-app.fly.dev/stats"
-                value="http://localhost:8080/stats"
-            >
-            <button class="btn" onclick="loadStats()" style="margin-top: 10px;">Load Stats</button>
-        </div>
-
         <div id="content">
-            <div class="loading">
-                <p>👆 Enter your API URL and click "Load Stats"</p>
-            </div>
+            <div class="loading">Loading your stats...</div>
         </div>
 
         <div class="refresh-info">
             Last updated: <span id="lastUpdate">Never</span>
+            <button class="refresh-btn" onclick="loadStats()">Refresh</button>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">Edit Transaction</div>
+            <div class="form-group">
+                <label for="editDescription">Description</label>
+                <input type="text" id="editDescription" placeholder="Transaction description">
+            </div>
+            <div class="form-group">
+                <label for="editAmount">Amount (AED)</label>
+                <input type="number" id="editAmount" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+                <label for="editDate">Date</label>
+                <input type="date" id="editDate">
+            </div>
+            <div class="form-group">
+                <label for="editCategory">Category</label>
+                <select id="editCategory">
+                    <option value="Food & Dining">🍔 Food & Dining</option>
+                    <option value="Transport">🚗 Transport</option>
+                    <option value="Shopping">🛍️ Shopping</option>
+                    <option value="Bills & Utilities">💳 Bills & Utilities</option>
+                    <option value="Entertainment">🎬 Entertainment</option>
+                    <option value="Health & Fitness">💪 Health & Fitness</option>
+                    <option value="Travel">✈️ Travel</option>
+                    <option value="Cash Withdrawal">💵 Cash Withdrawal</option>
+                    <option value="Income/Transfer">💰 Income/Transfer</option>
+                    <option value="Unknown">❓ Unknown</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeEditModal()">Cancel</button>
+                <button class="btn-save" onclick="saveTransaction()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">Confirm Delete</div>
+            <div class="delete-warning">
+                Are you sure you want to delete this transaction?
+                <div class="delete-item" id="deleteItemPreview"></div>
+            </div>
+            <p style="font-size: 13px; color: #999;">This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeDeleteModal()">Cancel</button>
+                <button class="btn-confirm" onclick="confirmDelete()">Delete</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // Load API URL from localStorage if available
+        // Global state to store current stats data
+        let statsData = null;
+        let categoriesData = [];
+
+        // Automatically load stats on page load
         window.addEventListener('DOMContentLoaded', () => {
-            const savedUrl = localStorage.getItem('apiUrl');
-            if (savedUrl) {
-                document.getElementById('apiUrl').value = savedUrl;
-                loadStats();
-            }
+            loadStats();
         });
 
         async function loadStats() {
-            const apiUrl = document.getElementById('apiUrl').value.trim();
             const content = document.getElementById('content');
-
-            if (!apiUrl) {
-                content.innerHTML = '<div class="error">Please enter an API URL</div>';
-                return;
-            }
-
-            // Save URL to localStorage
-            localStorage.setItem('apiUrl', apiUrl);
 
             // Show loading
             content.innerHTML = '<div class="loading">Loading your stats...</div>';
 
             try {
-                const response = await fetch(apiUrl);
+                // Use relative URL - will automatically use the same host
+                const response = await fetch('/stats');
 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                 }
 
                 const data = await response.json();
@@ -323,41 +747,42 @@
                 document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
 
             } catch (error) {
-                content.innerHTML = `
-                    <div class="error">
-                        <strong>Error loading stats:</strong><br>
-                        ${error.message}
-                        <br><br>
-                        <small>Make sure your API is running and the URL is correct.</small>
-                    </div>
-                `;
+                content.innerHTML =
+                    '<div class="error">' +
+                    '<strong>Error loading stats:</strong><br>' +
+                    error.message +
+                    '<br><br>' +
+                    '<small>Make sure your API is running correctly.</small>' +
+                    '</div>';
             }
         }
 
         function renderStats(data) {
             const content = document.getElementById('content');
 
+            // Store data globally for DOM updates
+            statsData = data;
+            categoriesData = data.categories || [];
+
             // Handle empty state
             if (data.count === 0) {
-                content.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-emoji">📊</div>
-                        <h3>No Transactions Yet</h3>
-                        <p style="margin-top: 10px; color: #999;">
-                            Start logging your expenses for ${data.cycle}
-                        </p>
-                    </div>
-                `;
+                content.innerHTML =
+                    '<div class="empty-state">' +
+                    '<div class="empty-state-emoji">📊</div>' +
+                    '<h3>No Transactions Yet</h3>' +
+                    '<p style="margin-top: 10px; color: #999;">' +
+                    'Start logging your expenses for ' + escapeHtml(data.cycle) +
+                    '</p>' +
+                    '</div>';
                 return;
             }
 
-            let html = `
-                <div class="total-section">
-                    <div class="total-label">Total Spent</div>
-                    <div class="total-amount">${formatCurrency(data.total)}</div>
-                    <div class="total-count">${data.count} transaction${data.count !== 1 ? 's' : ''} in ${data.cycle}</div>
-                </div>
-            `;
+            let html =
+                '<div class="total-section">' +
+                '<div class="total-label">Total Spent</div>' +
+                '<div class="total-amount">' + formatCurrency(data.total) + '</div>' +
+                '<div class="total-count">' + data.count + ' transaction' + (data.count !== 1 ? 's' : '') + ' in ' + escapeHtml(data.cycle) + '</div>' +
+                '</div>';
 
             // Last transaction
             if (data.lastTransaction) {
@@ -366,43 +791,147 @@
                 const isToday = txDate.toDateString() === today.toDateString();
                 const dateStr = isToday ? 'today' : formatDate(txDate);
 
-                html += `
-                    <div class="last-transaction">
-                        <div class="last-transaction-title">🕐 Last Transaction</div>
-                        <div class="last-transaction-desc">${escapeHtml(data.lastTransaction.description)}</div>
-                        <div class="last-transaction-details">
-                            ${formatCurrency(data.lastTransaction.amount)} • ${dateStr}
-                        </div>
-                    </div>
-                `;
+                html +=
+                    '<div class="last-transaction">' +
+                    '<div class="last-transaction-title">🕐 Last Transaction</div>' +
+                    '<div class="last-transaction-desc">' + escapeHtml(data.lastTransaction.description) + '</div>' +
+                    '<div class="last-transaction-details">' +
+                    formatCurrency(data.lastTransaction.amount) + ' • ' + dateStr +
+                    '</div>' +
+                    '</div>';
             }
 
             // Categories
             if (data.categories && data.categories.length > 0) {
-                html += `
-                    <div class="categories-section">
-                        <div class="section-title">By Category</div>
-                `;
+                html += '<div class="categories-section"><div class="section-title">By Category</div>';
+                html += '<div class="categories-grid">';
 
-                data.categories.forEach(cat => {
-                    html += `
-                        <div class="category-item">
-                            <div class="category-left">
-                                <div class="category-emoji">${cat.emoji}</div>
-                                <div>
-                                    <div class="category-name">${escapeHtml(cat.category)}</div>
-                                    <div class="category-count">${cat.count} transaction${cat.count !== 1 ? 's' : ''}</div>
-                                </div>
-                            </div>
-                            <div class="category-amount">${formatCurrency(cat.total)}</div>
-                        </div>
-                    `;
+                data.categories.forEach(function(cat, index) {
+                    html += '<div class="category-wrapper">';
+
+                    // Category header
+                    html +=
+                        '<div class="category-item" onclick="toggleCategory(' + index + ')">' +
+                        '<div class="category-left">' +
+                        '<div class="category-emoji">' + cat.emoji + '</div>' +
+                        '<div>' +
+                        '<div class="category-name">' + escapeHtml(cat.category) + '</div>' +
+                        '<div class="category-count">' + cat.count + ' transaction' + (cat.count !== 1 ? 's' : '') + '</div>' +
+                        '</div>' +
+                        '</div>' +
+                        '<div style="display: flex; align-items: center;">' +
+                        '<div class="category-amount">' + formatCurrency(cat.total) + '</div>' +
+                        '<span class="expand-icon" id="icon-' + index + '">▶</span>' +
+                        '</div>' +
+                        '</div>';
+
+                    // Transactions list
+                    html += '<div class="transactions-list" id="transactions-' + index + '">';
+
+                    if (cat.transactions && cat.transactions.length > 0) {
+                        cat.transactions.forEach(function(tx) {
+                            const txDate = new Date(tx.date);
+                            const dateStr = formatDate(txDate);
+
+                            html +=
+                                '<div class="transaction-item">' +
+                                '<div class="transaction-desc">' + escapeHtml(tx.description) + '</div>' +
+                                '<div class="transaction-details">' +
+                                '<div class="transaction-meta">' +
+                                '<span>' + dateStr + '</span>' +
+                                '<span>' + tx.confidence + '% confidence</span>' +
+                                '</div>' +
+                                '<div class="transaction-amount">' + formatCurrency(tx.amount) + '</div>' +
+                                '</div>' +
+                                '<div class="transaction-actions">' +
+                                '<button class="btn-edit" onclick=\'openEditModal(' + JSON.stringify(tx) + ')\'>✏️ Edit</button>' +
+                                '<button class="btn-delete" onclick=\'openDeleteModal(' + tx.id + ', "' + escapeHtml(tx.description) + '", ' + tx.amount + ')\'>🗑️ Delete</button>' +
+                                '</div>' +
+                                '</div>';
+                        });
+                    }
+
+                    html += '</div></div>'; // Close transactions-list and category-wrapper
                 });
 
-                html += `</div>`;
+                html += '</div>'; // Close categories-grid
+                html += '</div>'; // Close categories-section
+            }
+
+            // All Transactions section
+            if (data.categories && data.categories.length > 0) {
+                // Collect all transactions from all categories
+                let allTransactions = [];
+                data.categories.forEach(function(cat) {
+                    if (cat.transactions && cat.transactions.length > 0) {
+                        cat.transactions.forEach(function(tx) {
+                            allTransactions.push(tx);
+                        });
+                    }
+                });
+
+                // Sort by date descending (most recent first)
+                allTransactions.sort(function(a, b) {
+                    return new Date(b.date) - new Date(a.date);
+                });
+
+                if (allTransactions.length > 0) {
+                    html += '<div class="all-transactions-section">';
+                    html += '<div class="section-title">All Transactions</div>';
+                    html += '<div class="all-transactions-list">';
+
+                    allTransactions.forEach(function(tx) {
+                        const txDate = new Date(tx.date);
+                        const dateStr = formatDate(txDate);
+                        const fullDate = txDate.toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                        });
+
+                        html +=
+                            '<div class="all-transaction-item">' +
+                            '<div class="all-transaction-row">' +
+                            '<div class="all-transaction-date" title="' + fullDate + '">' +
+                            '<div class="date-day">' + dateStr + '</div>' +
+                            '</div>' +
+                            '<div class="all-transaction-info">' +
+                            '<div class="all-transaction-desc">' + escapeHtml(tx.description) + '</div>' +
+                            '<div class="all-transaction-category">' +
+                            getCategoryEmojiByName(tx.category) + ' ' + escapeHtml(tx.category) +
+                            '</div>' +
+                            '</div>' +
+                            '<div class="all-transaction-amount">' + formatCurrency(tx.amount) + '</div>' +
+                            '<div class="all-transaction-actions">' +
+                            '<button class="btn-edit btn-small" onclick=\'openEditModal(' + JSON.stringify(tx) + ')\' title="Edit">✏️</button>' +
+                            '<button class="btn-delete btn-small" onclick=\'openDeleteModal(' + tx.id + ', "' + escapeHtml(tx.description) + '", ' + tx.amount + ')\' title="Delete">🗑️</button>' +
+                            '</div>' +
+                            '</div>' +
+                            '</div>';
+                    });
+
+                    html += '</div>'; // Close all-transactions-list
+                    html += '</div>'; // Close all-transactions-section
+                }
             }
 
             content.innerHTML = html;
+        }
+
+        function toggleCategory(index) {
+            const list = document.getElementById('transactions-' + index);
+            const icon = document.getElementById('icon-' + index);
+
+            if (list.classList.contains('expanded')) {
+                list.classList.remove('expanded');
+                icon.classList.remove('expanded');
+                icon.textContent = '▶';
+            } else {
+                list.classList.add('expanded');
+                icon.classList.add('expanded');
+                icon.textContent = '▼';
+            }
         }
 
         function formatCurrency(amount) {
@@ -423,13 +952,462 @@
             return div.innerHTML;
         }
 
-        // Auto-refresh every 30 seconds if stats are loaded
-        setInterval(() => {
-            const savedUrl = localStorage.getItem('apiUrl');
-            if (savedUrl && document.getElementById('content').querySelector('.total-section')) {
-                loadStats();
+        // Edit/Delete Modal Functions
+        let currentTransactionId = null;
+        let currentTransaction = null;
+
+        function openEditModal(tx) {
+            currentTransactionId = tx.id;
+            // Clone the transaction to avoid reference issues
+            currentTransaction = {
+                id: tx.id,
+                description: tx.description,
+                amount: tx.amount,
+                date: tx.date,
+                category: tx.category,
+                confidence: tx.confidence
+            };
+            document.getElementById('editDescription').value = tx.description;
+            document.getElementById('editAmount').value = tx.amount;
+            document.getElementById('editDate').value = tx.date;
+            document.getElementById('editCategory').value = tx.category;
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+            currentTransactionId = null;
+        }
+
+        async function saveTransaction() {
+            if (!currentTransactionId) return;
+
+            const updatedTransaction = {
+                description: document.getElementById('editDescription').value,
+                amount: parseFloat(document.getElementById('editAmount').value),
+                date: document.getElementById('editDate').value,
+                category: document.getElementById('editCategory').value
+            };
+
+            console.log('💾 Saving transaction:', {
+                id: currentTransactionId,
+                old: currentTransaction,
+                new: updatedTransaction
+            });
+
+            try {
+                const response = await fetch('/transaction/' + currentTransactionId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedTransaction)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update transaction');
+                }
+
+                console.log('✅ Server update successful');
+
+                // Save the ID before closing modal (which sets it to null)
+                const txId = currentTransactionId;
+                const oldTx = currentTransaction;
+
+                closeEditModal();
+                updateTransactionInDOM(txId, oldTx, updatedTransaction);
+            } catch (error) {
+                console.error('❌ Save failed:', error);
+                alert('Error updating transaction: ' + error.message);
             }
-        }, 30000);
+        }
+
+        function updateTransactionInDOM(txId, oldTx, newTx) {
+            console.log('🔄 Updating transaction in DOM:', { txId, oldTx, newTx });
+
+            const oldCategory = oldTx.category;
+            const newCategory = newTx.category;
+            const categoryChanged = oldCategory !== newCategory;
+
+            console.log('📂 Category changed?', categoryChanged, `(${oldCategory} → ${newCategory})`);
+
+            // Find the transaction in categoriesData
+            let found = false;
+            for (let cat of categoriesData) {
+                const txIndex = cat.transactions.findIndex(t => t.id === txId);
+                if (txIndex !== -1) {
+                    found = true;
+                    console.log('✓ Found transaction in category:', cat.category);
+
+                    if (categoryChanged) {
+                        console.log('🔀 Moving transaction between categories');
+                        // Remove from old category
+                        const removedTx = cat.transactions.splice(txIndex, 1)[0];
+                        cat.total -= oldTx.amount;
+                        cat.count--;
+
+                        // Update the transaction data
+                        removedTx.description = newTx.description;
+                        removedTx.amount = newTx.amount;
+                        removedTx.date = newTx.date;
+                        removedTx.category = newTx.category;
+
+                        // Add to new category
+                        let newCat = categoriesData.find(c => c.category === newCategory);
+                        if (!newCat) {
+                            console.log('➕ Creating new category:', newCategory);
+                            // Create new category if it doesn't exist
+                            newCat = {
+                                category: newCategory,
+                                emoji: getCategoryEmojiByName(newCategory),
+                                total: 0,
+                                count: 0,
+                                transactions: []
+                            };
+                            categoriesData.push(newCat);
+                        }
+                        newCat.transactions.push(removedTx);
+                        newCat.total += newTx.amount;
+                        newCat.count++;
+
+                        // Remove old category if empty
+                        if (cat.count === 0) {
+                            console.log('🗑️ Removing empty category:', cat.category);
+                            const catIndex = categoriesData.indexOf(cat);
+                            if (catIndex > -1) {
+                                categoriesData.splice(catIndex, 1);
+                            }
+                        }
+                    } else {
+                        console.log('✏️ Updating transaction in same category');
+                        console.log('Before:', { desc: cat.transactions[txIndex].description, amount: cat.transactions[txIndex].amount, total: cat.total });
+                        // Just update in the same category
+                        cat.transactions[txIndex].description = newTx.description;
+                        cat.transactions[txIndex].amount = newTx.amount;
+                        cat.transactions[txIndex].date = newTx.date;
+                        cat.total = cat.total - oldTx.amount + newTx.amount;
+                        console.log('After:', { desc: cat.transactions[txIndex].description, amount: cat.transactions[txIndex].amount, total: cat.total });
+                    }
+                    break;
+                }
+            }
+
+            if (!found) {
+                console.error('❌ Transaction not found in categoriesData!', txId);
+            }
+
+            // Update totals
+            const oldTotal = statsData.total;
+            statsData.total = statsData.total - oldTx.amount + newTx.amount;
+            console.log('💰 Total updated:', oldTotal, '→', statsData.total);
+
+            // Update the DOM
+            console.log('🎨 Updating DOM...');
+            updateTotalsInDOM();
+            updateCategoriesInDOM();
+            updateAllTransactionsInDOM();
+
+            // Show success toast
+            showToast('Transaction updated successfully');
+            console.log('✅ DOM update complete');
+        }
+
+        function openDeleteModal(id, description, amount) {
+            currentTransactionId = id;
+            const preview = description + ' - ' + formatCurrency(amount);
+            document.getElementById('deleteItemPreview').textContent = preview;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+            currentTransactionId = null;
+        }
+
+        async function confirmDelete() {
+            if (!currentTransactionId) return;
+
+            console.log('🗑️ Deleting transaction:', currentTransactionId);
+
+            try {
+                const response = await fetch('/transaction/' + currentTransactionId, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to delete transaction');
+                }
+
+                console.log('✅ Server delete successful');
+
+                // Save the ID before closing modal (which sets it to null)
+                const txId = currentTransactionId;
+
+                closeDeleteModal();
+                deleteTransactionFromDOM(txId);
+            } catch (error) {
+                console.error('❌ Delete failed:', error);
+                alert('Error deleting transaction: ' + error.message);
+            }
+        }
+
+        function deleteTransactionFromDOM(txId) {
+            console.log('🗑️ Deleting transaction from DOM:', txId);
+
+            let deletedTx = null;
+            let categoryIndex = -1;
+
+            // Find and remove transaction from categoriesData
+            for (let i = 0; i < categoriesData.length; i++) {
+                const txIndex = categoriesData[i].transactions.findIndex(t => t.id === txId);
+                if (txIndex !== -1) {
+                    deletedTx = categoriesData[i].transactions[txIndex];
+                    console.log('✓ Found transaction in category:', categoriesData[i].category);
+                    console.log('Deleting:', deletedTx);
+
+                    categoriesData[i].transactions.splice(txIndex, 1);
+                    categoriesData[i].total -= deletedTx.amount;
+                    categoriesData[i].count--;
+                    categoryIndex = i;
+                    break;
+                }
+            }
+
+            if (!deletedTx) {
+                console.error('❌ Transaction not found in categoriesData!', txId);
+                return;
+            }
+
+            // Update totals
+            const oldTotal = statsData.total;
+            const oldCount = statsData.count;
+            statsData.total -= deletedTx.amount;
+            statsData.count--;
+            console.log('💰 Total updated:', oldTotal, '→', statsData.total);
+            console.log('📊 Count updated:', oldCount, '→', statsData.count);
+
+            // Remove empty categories
+            if (categoriesData[categoryIndex].count === 0) {
+                console.log('🗑️ Removing empty category:', categoriesData[categoryIndex].category);
+                categoriesData.splice(categoryIndex, 1);
+            }
+
+            // Update the DOM
+            console.log('🎨 Updating DOM...');
+            updateTotalsInDOM();
+            updateCategoriesInDOM();
+            updateAllTransactionsInDOM();
+
+            // Show success toast
+            showToast('Transaction deleted successfully');
+            console.log('✅ Delete complete');
+        }
+
+        function updateTotalsInDOM() {
+            const totalAmountEl = document.querySelector('.total-amount');
+            const totalCountEl = document.querySelector('.total-count');
+
+            if (totalAmountEl) {
+                totalAmountEl.textContent = formatCurrency(statsData.total);
+            }
+            if (totalCountEl) {
+                totalCountEl.textContent = statsData.count + ' transaction' + (statsData.count !== 1 ? 's' : '') + ' in ' + statsData.cycle;
+            }
+        }
+
+        function updateCategoriesInDOM() {
+            console.log('🎨 updateCategoriesInDOM called');
+
+            // Get the categories grid container
+            const gridContainer = document.querySelector('.categories-grid');
+            if (!gridContainer) {
+                console.error('❌ Categories grid container not found!');
+                return;
+            }
+
+            // Store currently expanded categories BEFORE sorting
+            const expandedCategories = new Set();
+            document.querySelectorAll('.transactions-list.expanded').forEach(list => {
+                const index = list.id.replace('transactions-', '');
+                const categoryName = categoriesData[parseInt(index)]?.category;
+                if (categoryName) expandedCategories.add(categoryName);
+            });
+            console.log('📋 Expanded categories:', Array.from(expandedCategories));
+
+            // Sort categories by total descending AFTER storing expanded state
+            categoriesData.sort((a, b) => b.total - a.total);
+            console.log('🔢 Categories sorted:', categoriesData.map(c => `${c.category}: ${c.total}`));
+
+            // Rebuild categories
+            let html = '';
+            categoriesData.forEach(function(cat, index) {
+                const isExpanded = expandedCategories.has(cat.category);
+
+                html += '<div class="category-wrapper">';
+                html +=
+                    '<div class="category-item" onclick="toggleCategory(' + index + ')">' +
+                    '<div class="category-left">' +
+                    '<div class="category-emoji">' + cat.emoji + '</div>' +
+                    '<div>' +
+                    '<div class="category-name">' + escapeHtml(cat.category) + '</div>' +
+                    '<div class="category-count">' + cat.count + ' transaction' + (cat.count !== 1 ? 's' : '') + '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '<div style="display: flex; align-items: center;">' +
+                    '<div class="category-amount">' + formatCurrency(cat.total) + '</div>' +
+                    '<span class="expand-icon' + (isExpanded ? ' expanded' : '') + '" id="icon-' + index + '">' + (isExpanded ? '▼' : '▶') + '</span>' +
+                    '</div>' +
+                    '</div>';
+
+                html += '<div class="transactions-list' + (isExpanded ? ' expanded' : '') + '" id="transactions-' + index + '">';
+
+                if (cat.transactions && cat.transactions.length > 0) {
+                    cat.transactions.forEach(function(tx) {
+                        const txDate = new Date(tx.date);
+                        const dateStr = formatDate(txDate);
+
+                        html +=
+                            '<div class="transaction-item">' +
+                            '<div class="transaction-desc">' + escapeHtml(tx.description) + '</div>' +
+                            '<div class="transaction-details">' +
+                            '<div class="transaction-meta">' +
+                            '<span>' + dateStr + '</span>' +
+                            '<span>' + tx.confidence + '% confidence</span>' +
+                            '</div>' +
+                            '<div class="transaction-amount">' + formatCurrency(tx.amount) + '</div>' +
+                            '</div>' +
+                            '<div class="transaction-actions">' +
+                            '<button class="btn-edit" onclick=\'openEditModal(' + JSON.stringify(tx) + ')\'>✏️ Edit</button>' +
+                            '<button class="btn-delete" onclick=\'openDeleteModal(' + tx.id + ', "' + escapeHtml(tx.description) + '", ' + tx.amount + ')\'>🗑️ Delete</button>' +
+                            '</div>' +
+                            '</div>';
+                    });
+                }
+
+                html += '</div></div>';
+            });
+
+            console.log('✨ Rebuilding categories grid with', categoriesData.length, 'categories');
+            gridContainer.innerHTML = html;
+            console.log('✅ Categories grid rebuilt');
+        }
+
+        function updateAllTransactionsInDOM() {
+            console.log('🎨 updateAllTransactionsInDOM called');
+
+            // Get the all-transactions list container
+            const allTransactionsContainer = document.querySelector('.all-transactions-list');
+            if (!allTransactionsContainer) {
+                console.log('ℹ️ All transactions container not found (might not exist yet)');
+                return;
+            }
+
+            // Collect all transactions from all categories
+            let allTransactions = [];
+            categoriesData.forEach(function(cat) {
+                if (cat.transactions && cat.transactions.length > 0) {
+                    cat.transactions.forEach(function(tx) {
+                        allTransactions.push(tx);
+                    });
+                }
+            });
+
+            // Sort by date descending (most recent first)
+            allTransactions.sort(function(a, b) {
+                return new Date(b.date) - new Date(a.date);
+            });
+
+            console.log('📊 Rebuilding all transactions list with', allTransactions.length, 'transactions');
+
+            // Rebuild HTML
+            let html = '';
+            allTransactions.forEach(function(tx) {
+                const txDate = new Date(tx.date);
+                const dateStr = formatDate(txDate);
+                const fullDate = txDate.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+
+                html +=
+                    '<div class="all-transaction-item">' +
+                    '<div class="all-transaction-row">' +
+                    '<div class="all-transaction-date" title="' + fullDate + '">' +
+                    '<div class="date-day">' + dateStr + '</div>' +
+                    '</div>' +
+                    '<div class="all-transaction-info">' +
+                    '<div class="all-transaction-desc">' + escapeHtml(tx.description) + '</div>' +
+                    '<div class="all-transaction-category">' +
+                    getCategoryEmojiByName(tx.category) + ' ' + escapeHtml(tx.category) +
+                    '</div>' +
+                    '</div>' +
+                    '<div class="all-transaction-amount">' + formatCurrency(tx.amount) + '</div>' +
+                    '<div class="all-transaction-actions">' +
+                    '<button class="btn-edit btn-small" onclick=\'openEditModal(' + JSON.stringify(tx) + ')\' title="Edit">✏️</button>' +
+                    '<button class="btn-delete btn-small" onclick=\'openDeleteModal(' + tx.id + ', "' + escapeHtml(tx.description) + '", ' + tx.amount + ')\' title="Delete">🗑️</button>' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>';
+            });
+
+            allTransactionsContainer.innerHTML = html;
+            console.log('✅ All transactions list rebuilt');
+        }
+
+        function getCategoryEmojiByName(category) {
+            const emojis = {
+                "Food & Dining": "🍔",
+                "Transport": "🚗",
+                "Shopping": "🛍️",
+                "Bills & Utilities": "💳",
+                "Entertainment": "🎬",
+                "Health & Fitness": "💪",
+                "Travel": "✈️",
+                "Cash Withdrawal": "💵",
+                "Income/Transfer": "💰",
+                "Unknown": "❓"
+            };
+            return emojis[category] || "📌";
+        }
+
+        // Toast notification function
+        function showToast(message) {
+            // Remove existing toast if any
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) {
+                existingToast.remove();
+            }
+
+            // Create toast element
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                toast.classList.add('hide');
+                toast.classList.remove('show');
+
+                // Remove from DOM after animation
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
+        }
+
+        // Close modals on overlay click
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeEditModal();
+                closeDeleteModal();
+            }
+        });
     </script>
 </body>
 </html>

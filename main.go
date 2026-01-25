@@ -28,12 +28,12 @@ type TransactionResponse struct {
 }
 
 type StatsResponse struct {
-	Success        bool               `json:"success"`
-	Message        string             `json:"message"`
-	Cycle          string             `json:"cycle"`
-	Total          float64            `json:"total"`
-	Count          int                `json:"count"`
-	Categories     []CategoryStats    `json:"categories,omitempty"`
+	Success         bool                `json:"success"`
+	Message         string              `json:"message"`
+	Cycle           string              `json:"cycle"`
+	Total           float64             `json:"total"`
+	Count           int                 `json:"count"`
+	Categories      []CategoryStats     `json:"categories,omitempty"`
 	LastTransaction *TransactionSummary `json:"lastTransaction,omitempty"`
 }
 
@@ -94,6 +94,7 @@ func main() {
 
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/transaction", transactionHandler(openAIClient, dbClient))
+	http.HandleFunc("/transaction/", transactionDetailHandler(dbClient))
 	http.HandleFunc("/stats", statsHandler(dbClient))
 	http.HandleFunc("/", dashboardHandler)
 
@@ -104,10 +105,12 @@ func main() {
 	log.Printf("[Server] Port: %s", config.Port)
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("[Server] Endpoints:")
-	log.Printf("[Server]   GET  /            - Dashboard UI")
-	log.Printf("[Server]   POST /transaction - Log new transaction")
-	log.Printf("[Server]   GET  /stats       - Get spending statistics")
-	log.Printf("[Server]   GET  /health      - Health check")
+	log.Printf("[Server]   GET    /              - Dashboard UI")
+	log.Printf("[Server]   POST   /transaction   - Log new transaction")
+	log.Printf("[Server]   PUT    /transaction/:id - Update transaction")
+	log.Printf("[Server]   DELETE /transaction/:id - Delete transaction")
+	log.Printf("[Server]   GET    /stats         - Get spending statistics")
+	log.Printf("[Server]   GET    /health        - Health check")
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("[Server] Server ready at http://localhost:%s", config.Port)
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -258,16 +261,16 @@ func calculateBillingCycle(dateStr string) string {
 
 func getCategoryEmoji(category string) string {
 	emojis := map[string]string{
-		"Food & Dining":      "🍔",
-		"Transport":          "🚗",
-		"Shopping":           "🛍️",
-		"Bills & Utilities":  "💳",
-		"Entertainment":      "🎬",
-		"Health & Fitness":   "💪",
-		"Travel":             "✈️",
-		"Cash Withdrawal":    "💵",
-		"Income/Transfer":    "💰",
-		"Unknown":            "❓",
+		"Food & Dining":     "🍔",
+		"Transport":         "🚗",
+		"Shopping":          "🛍️",
+		"Bills & Utilities": "💳",
+		"Entertainment":     "🎬",
+		"Health & Fitness":  "💪",
+		"Travel":            "✈️",
+		"Cash Withdrawal":   "💵",
+		"Income/Transfer":   "💰",
+		"Unknown":           "❓",
 	}
 	if emoji, ok := emojis[category]; ok {
 		return emoji
@@ -297,4 +300,90 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[API] GET / - Dashboard request from %s", r.RemoteAddr)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(dashboardHTML))
+}
+
+func transactionDetailHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract ID from path /transaction/:id
+		path := r.URL.Path
+		if path == "/transaction/" || path == "/transaction" {
+			http.NotFound(w, r)
+			return
+		}
+
+		idStr := path[len("/transaction/"):]
+		id, err := fmt.Sscanf(idStr, "%d", new(int64))
+		if err != nil || id == 0 {
+			http.Error(w, "Invalid transaction ID", http.StatusBadRequest)
+			return
+		}
+
+		var transactionID int64
+		fmt.Sscanf(idStr, "%d", &transactionID)
+
+		switch r.Method {
+		case http.MethodPut:
+			updateTransactionHandler(db, transactionID)(w, r)
+		case http.MethodDelete:
+			deleteTransactionHandler(db, transactionID)(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func updateTransactionHandler(db *DatabaseClient, id int64) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[API] PUT /transaction/%d - Update request from %s", id, r.RemoteAddr)
+
+		var tx Transaction
+		if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+			log.Printf("[API] Invalid request body: %v", err)
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// Recalculate billing cycle based on new date
+		tx.BillingCycle = calculateBillingCycle(tx.Date)
+
+		if err := db.UpdateTransaction(id, tx); err != nil {
+			log.Printf("[API] Failed to update transaction: %v", err)
+			if err.Error() == "transaction not found" {
+				http.Error(w, "Transaction not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "Failed to update transaction", http.StatusInternalServerError)
+			}
+			return
+		}
+
+		log.Printf("[API] Transaction %d updated successfully", id)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Transaction updated successfully",
+		})
+	}
+}
+
+func deleteTransactionHandler(db *DatabaseClient, id int64) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[API] DELETE /transaction/%d - Delete request from %s", id, r.RemoteAddr)
+
+		if err := db.DeleteTransaction(id); err != nil {
+			log.Printf("[API] Failed to delete transaction: %v", err)
+			if err.Error() == "transaction not found" {
+				http.Error(w, "Transaction not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "Failed to delete transaction", http.StatusInternalServerError)
+			}
+			return
+		}
+
+		log.Printf("[API] Transaction %d deleted successfully", id)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Transaction deleted successfully",
+		})
+	}
 }

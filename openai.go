@@ -14,6 +14,7 @@ type OpenAIClient struct {
 }
 
 type Transaction struct {
+	ID           int64   `json:"id,omitempty"`
 	Date         string  `json:"date"`
 	Description  string  `json:"description"`
 	Amount       float64 `json:"amount"`

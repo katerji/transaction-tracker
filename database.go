@@ -167,7 +167,7 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 	// Fetch transactions for each category
 	for i := range categories {
 		txRows, err := c.db.Query(`
-			SELECT description, amount, transaction_date, category, confidence, billing_cycle, created_at
+			SELECT id, description, amount, transaction_date, category, confidence, billing_cycle, created_at
 			FROM transactions
 			WHERE billing_cycle = ? AND category = ?
 			ORDER BY transaction_date DESC, created_at DESC
@@ -180,7 +180,7 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 		var transactions []Transaction
 		for txRows.Next() {
 			var tx Transaction
-			if err := txRows.Scan(&tx.Description, &tx.Amount, &tx.Date, &tx.Category, &tx.Confidence, &tx.BillingCycle, &tx.Timestamp); err != nil {
+			if err := txRows.Scan(&tx.ID, &tx.Description, &tx.Amount, &tx.Date, &tx.Category, &tx.Confidence, &tx.BillingCycle, &tx.Timestamp); err != nil {
 				txRows.Close()
 				return nil, fmt.Errorf("failed to scan transaction: %w", err)
 			}
@@ -246,6 +246,59 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 		Categories:      categories,
 		LastTransaction: lastTransaction,
 	}, nil
+}
+
+func (c *DatabaseClient) UpdateTransaction(id int64, tx Transaction) error {
+	query := `
+		UPDATE transactions
+		SET description = ?, amount = ?, transaction_date = ?, category = ?, billing_cycle = ?
+		WHERE id = ?
+	`
+
+	log.Printf("[Database] Updating transaction ID %d: %s (%.2f AED)", id, tx.Description, tx.Amount)
+
+	result, err := c.db.Exec(
+		query,
+		tx.Description,
+		tx.Amount,
+		tx.Date,
+		tx.Category,
+		tx.BillingCycle,
+		id,
+	)
+
+	if err != nil {
+		log.Printf("[Database] Failed to update transaction: %v", err)
+		return fmt.Errorf("failed to update transaction: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("transaction not found")
+	}
+
+	log.Printf("[Database] Transaction updated successfully")
+	return nil
+}
+
+func (c *DatabaseClient) DeleteTransaction(id int64) error {
+	query := `DELETE FROM transactions WHERE id = ?`
+
+	log.Printf("[Database] Deleting transaction ID %d", id)
+
+	result, err := c.db.Exec(query, id)
+	if err != nil {
+		log.Printf("[Database] Failed to delete transaction: %v", err)
+		return fmt.Errorf("failed to delete transaction: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("transaction not found")
+	}
+
+	log.Printf("[Database] Transaction deleted successfully")
+	return nil
 }
 
 func (c *DatabaseClient) Close() error {

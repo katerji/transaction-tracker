@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Tracker Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .cycle-info {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .total-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .total-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .total-amount {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .total-count {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .categories-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .category-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            transition: transform 0.2s;
+        }
+
+        .category-item:hover {
+            transform: translateX(5px);
+            background: #f0f1f3;
+        }
+
+        .category-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .category-emoji {
+            font-size: 24px;
+        }
+
+        .category-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .category-count {
+            font-size: 12px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .category-amount {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .last-transaction {
+            background: #fff9e6;
+            border-left: 4px solid #ffd700;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .last-transaction-title {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .last-transaction-desc {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .last-transaction-details {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .config-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .config-section label {
+            display: block;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .config-section input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .config-section input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #fee;
+            border-left: 4px solid #f44;
+            padding: 15px;
+            border-radius: 8px;
+            color: #c33;
+            margin-bottom: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state-emoji {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .refresh-info {
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            .total-amount {
+                font-size: 36px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Transaction Tracker</h1>
+            <p class="cycle-info">Billing Cycle Dashboard</p>
+        </div>
+
+        <div class="config-section">
+            <label for="apiUrl">API URL:</label>
+            <input
+                type="text"
+                id="apiUrl"
+                placeholder="https://your-app.fly.dev/stats"
+                value="http://localhost:8080/stats"
+            >
+            <button class="btn" onclick="loadStats()" style="margin-top: 10px;">Load Stats</button>
+        </div>
+
+        <div id="content">
+            <div class="loading">
+                <p>👆 Enter your API URL and click "Load Stats"</p>
+            </div>
+        </div>
+
+        <div class="refresh-info">
+            Last updated: <span id="lastUpdate">Never</span>
+        </div>
+    </div>
+
+    <script>
+        // Load API URL from localStorage if available
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedUrl = localStorage.getItem('apiUrl');
+            if (savedUrl) {
+                document.getElementById('apiUrl').value = savedUrl;
+                loadStats();
+            }
+        });
+
+        async function loadStats() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            const content = document.getElementById('content');
+
+            if (!apiUrl) {
+                content.innerHTML = '<div class="error">Please enter an API URL</div>';
+                return;
+            }
+
+            // Save URL to localStorage
+            localStorage.setItem('apiUrl', apiUrl);
+
+            // Show loading
+            content.innerHTML = '<div class="loading">Loading your stats...</div>';
+
+            try {
+                const response = await fetch(apiUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.message || 'Failed to load stats');
+                }
+
+                renderStats(data);
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+            } catch (error) {
+                content.innerHTML = `
+                    <div class="error">
+                        <strong>Error loading stats:</strong><br>
+                        ${error.message}
+                        <br><br>
+                        <small>Make sure your API is running and the URL is correct.</small>
+                    </div>
+                `;
+            }
+        }
+
+        function renderStats(data) {
+            const content = document.getElementById('content');
+
+            // Handle empty state
+            if (data.count === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-emoji">📊</div>
+                        <h3>No Transactions Yet</h3>
+                        <p style="margin-top: 10px; color: #999;">
+                            Start logging your expenses for ${data.cycle}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="total-section">
+                    <div class="total-label">Total Spent</div>
+                    <div class="total-amount">${formatCurrency(data.total)}</div>
+                    <div class="total-count">${data.count} transaction${data.count !== 1 ? 's' : ''} in ${data.cycle}</div>
+                </div>
+            `;
+
+            // Last transaction
+            if (data.lastTransaction) {
+                const txDate = new Date(data.lastTransaction.date);
+                const today = new Date();
+                const isToday = txDate.toDateString() === today.toDateString();
+                const dateStr = isToday ? 'today' : formatDate(txDate);
+
+                html += `
+                    <div class="last-transaction">
+                        <div class="last-transaction-title">🕐 Last Transaction</div>
+                        <div class="last-transaction-desc">${escapeHtml(data.lastTransaction.description)}</div>
+                        <div class="last-transaction-details">
+                            ${formatCurrency(data.lastTransaction.amount)} • ${dateStr}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Categories
+            if (data.categories && data.categories.length > 0) {
+                html += `
+                    <div class="categories-section">
+                        <div class="section-title">By Category</div>
+                `;
+
+                data.categories.forEach(cat => {
+                    html += `
+                        <div class="category-item">
+                            <div class="category-left">
+                                <div class="category-emoji">${cat.emoji}</div>
+                                <div>
+                                    <div class="category-name">${escapeHtml(cat.category)}</div>
+                                    <div class="category-count">${cat.count} transaction${cat.count !== 1 ? 's' : ''}</div>
+                                </div>
+                            </div>
+                            <div class="category-amount">${formatCurrency(cat.total)}</div>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+            }
+
+            content.innerHTML = html;
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-AE', {
+                style: 'currency',
+                currency: 'AED',
+                minimumFractionDigits: 2
+            }).format(amount);
+        }
+
+        function formatDate(date) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Auto-refresh every 30 seconds if stats are loaded
+        setInterval(() => {
+            const savedUrl = localStorage.getItem('apiUrl');
+            if (savedUrl && document.getElementById('content').querySelector('.total-section')) {
+                loadStats();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>

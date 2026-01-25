@@ -1,0 +1,30 @@
+# Ignore local development files
+.env
+*.db
+transactions.db
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.idea
+.vscode
+
+# Archives
+archive/
+
+# Build artifacts
+transaction-tracker
+*.exe
+
+# Docker
+docker-compose.yml
+Dockerfile
+
+# Fly.io
+fly.toml

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_PATH for Docker environment
+      - DATABASE_PATH=/data/transactions.db
+    volumes:
+      # Mount volume for SQLite database persistence
+      - sqlite_data:/data
+    restart: unless-stopped
+
+volumes:
+  # Named volume for SQLite database
+  # Data persists between container restarts and rebuilds
+  sqlite_data:

@@ -740,6 +740,20 @@
                 border-radius: 15px;
             }
 
+            .section-title {
+                border-bottom: 1px solid #f0f0f0;
+                padding: 10px 0 8px 0;
+                margin-bottom: 10px;
+            }
+
+            .categories-section {
+                margin-bottom: 10px;
+            }
+
+            .all-transactions-section {
+                margin-top: 10px;
+            }
+
             .total-section {
                 padding: 20px;
             }
@@ -753,35 +767,48 @@
             }
 
             .all-transaction-row {
-                flex-wrap: wrap;
-                gap: 8px;
+                flex-wrap: nowrap;
+                gap: 6px;
+                padding: 8px 10px;
             }
 
             .all-transaction-date {
-                width: 100%;
-                text-align: left;
-                padding-bottom: 5px;
-                border-bottom: 1px solid #f0f0f0;
+                width: auto;
+                flex-shrink: 0;
+            }
+
+            .date-day {
+                font-size: 11px;
             }
 
             .all-transaction-info {
-                width: 100%;
-                order: 2;
+                flex: 1;
+                min-width: 0;
+            }
+
+            .all-transaction-desc {
+                font-size: 11px;
+                margin-bottom: 1px;
+            }
+
+            .all-transaction-category {
+                font-size: 10px;
             }
 
             .all-transaction-amount {
-                order: 1;
-                text-align: left;
+                font-size: 11px;
                 min-width: auto;
+                text-align: right;
             }
 
             .all-transaction-actions {
-                width: 100%;
-                order: 3;
-                justify-content: flex-end;
-                margin-top: 8px;
-                padding-top: 8px;
-                border-top: 1px solid #f0f0f0;
+                flex-shrink: 0;
+                gap: 2px;
+            }
+
+            .btn-small {
+                padding: 4px 6px;
+                font-size: 10px;
             }
         }
 

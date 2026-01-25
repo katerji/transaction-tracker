@@ -204,6 +204,12 @@
         .transaction-meta {
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .transaction-meta span {
+            white-space: nowrap;
         }
 
         .transaction-amount {
@@ -831,15 +837,14 @@
 
                     if (cat.transactions && cat.transactions.length > 0) {
                         cat.transactions.forEach(function(tx) {
-                            const txDate = new Date(tx.date);
-                            const dateStr = formatDate(txDate);
+                            const dateTimeStr = formatDateTime(tx.date);
 
                             html +=
                                 '<div class="transaction-item">' +
                                 '<div class="transaction-desc">' + escapeHtml(tx.description) + '</div>' +
                                 '<div class="transaction-details">' +
                                 '<div class="transaction-meta">' +
-                                '<span>' + dateStr + '</span>' +
+                                '<span>' + dateTimeStr + '</span>' +
                                 '<span>' + tx.confidence + '% confidence</span>' +
                                 '</div>' +
                                 '<div class="transaction-amount">' + formatCurrency(tx.amount) + '</div>' +
@@ -1270,15 +1275,14 @@
 
                 if (cat.transactions && cat.transactions.length > 0) {
                     cat.transactions.forEach(function(tx) {
-                        const txDate = new Date(tx.date);
-                        const dateStr = formatDate(txDate);
+                        const dateTimeStr = formatDateTime(tx.date);
 
                         html +=
                             '<div class="transaction-item">' +
                             '<div class="transaction-desc">' + escapeHtml(tx.description) + '</div>' +
                             '<div class="transaction-details">' +
                             '<div class="transaction-meta">' +
-                            '<span>' + dateStr + '</span>' +
+                            '<span>' + dateTimeStr + '</span>' +
                             '<span>' + tx.confidence + '% confidence</span>' +
                             '</div>' +
                             '<div class="transaction-amount">' + formatCurrency(tx.amount) + '</div>' +

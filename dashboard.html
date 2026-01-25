@@ -784,6 +784,46 @@
                 border-top: 1px solid #f0f0f0;
             }
         }
+
+        /* FAB (Floating Action Button) */
+        .fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            z-index: 100;
+            user-select: none;
+        }
+
+        .fab:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .fab:active {
+            transform: scale(0.95);
+        }
+
+        @media (max-width: 768px) {
+            .fab {
+                bottom: 20px;
+                right: 20px;
+                width: 60px;
+                height: 60px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -863,6 +903,48 @@
             </div>
         </div>
     </div>
+
+    <!-- Add Transaction Modal -->
+    <div id="addModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-drag-handle"></div>
+            <div class="modal-header">Add Transaction</div>
+            <div class="form-group">
+                <label for="addDescription">Description</label>
+                <input type="text" id="addDescription" placeholder="Transaction description">
+            </div>
+            <div class="form-group">
+                <label for="addAmount">Amount (AED)</label>
+                <input type="number" id="addAmount" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+                <label for="addDate">Date & Time</label>
+                <input type="datetime-local" id="addDate">
+            </div>
+            <div class="form-group">
+                <label for="addCategory">Category</label>
+                <select id="addCategory">
+                    <option value="Food & Dining">🍔 Food & Dining</option>
+                    <option value="Transport">🚗 Transport</option>
+                    <option value="Shopping">🛍️ Shopping</option>
+                    <option value="Bills & Utilities">💳 Bills & Utilities</option>
+                    <option value="Entertainment">🎬 Entertainment</option>
+                    <option value="Health & Fitness">💪 Health & Fitness</option>
+                    <option value="Travel">✈️ Travel</option>
+                    <option value="Cash Withdrawal">💵 Cash Withdrawal</option>
+                    <option value="Income/Transfer">💰 Income/Transfer</option>
+                    <option value="Unknown">❓ Unknown</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeAddModal()">Cancel</button>
+                <button class="btn-save" onclick="saveNewTransaction()">Add Transaction</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAB Button -->
+    <button class="fab" onclick="openAddModal()" title="Add Transaction">+</button>
 
     <script>
         // Global state to store current stats data
@@ -1579,6 +1661,147 @@
             }, 3000);
         }
 
+        // Add Transaction Modal Functions
+        function openAddModal() {
+            // Clear form
+            document.getElementById('addDescription').value = '';
+            document.getElementById('addAmount').value = '';
+            document.getElementById('addCategory').value = 'Food & Dining';
+
+            // Set current date and time in local timezone
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const dateTimeValue = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+            document.getElementById('addDate').value = dateTimeValue;
+
+            // Open modal
+            document.getElementById('addModal').classList.add('active');
+            hapticFeedback('light');
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('active');
+        }
+
+        async function saveNewTransaction() {
+            // Get form values
+            const description = document.getElementById('addDescription').value.trim();
+            const amount = parseFloat(document.getElementById('addAmount').value);
+            const category = document.getElementById('addCategory').value;
+
+            // Convert datetime-local format "2026-01-25T21:43" to "2026-01-25 21:43:00"
+            let dateTimeValue = document.getElementById('addDate').value;
+            if (!dateTimeValue) {
+                alert('Please enter a date and time');
+                return;
+            }
+            if (dateTimeValue.includes('T')) {
+                dateTimeValue = dateTimeValue.replace('T', ' ') + ':00';
+            }
+
+            // Validation
+            if (!description) {
+                alert('Please enter a description');
+                return;
+            }
+            if (isNaN(amount) || amount <= 0) {
+                alert('Please enter a valid amount');
+                return;
+            }
+
+            const newTransaction = {
+                description: description,
+                amount: amount,
+                date: dateTimeValue,
+                category: category
+            };
+
+            console.log('➕ Adding new transaction:', newTransaction);
+
+            try {
+                const response = await fetch('/transaction/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newTransaction)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to add transaction');
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || 'Failed to add transaction');
+                }
+
+                console.log('✅ Server add successful:', result);
+
+                closeAddModal();
+
+                // Add transaction to DOM with the ID from server
+                const addedTransaction = {
+                    id: result.id,
+                    description: newTransaction.description,
+                    amount: newTransaction.amount,
+                    date: newTransaction.date,
+                    category: newTransaction.category,
+                    confidence: 100 // Manual transactions have 100% confidence
+                };
+
+                addTransactionToDOM(addedTransaction);
+
+            } catch (error) {
+                console.error('❌ Add failed:', error);
+                alert('Error adding transaction: ' + error.message);
+            }
+        }
+
+        function addTransactionToDOM(tx) {
+            console.log('➕ Adding transaction to DOM:', tx);
+
+            // Find or create category
+            let category = categoriesData.find(c => c.category === tx.category);
+            if (!category) {
+                console.log('➕ Creating new category:', tx.category);
+                category = {
+                    category: tx.category,
+                    emoji: getCategoryEmojiByName(tx.category),
+                    total: 0,
+                    count: 0,
+                    transactions: []
+                };
+                categoriesData.push(category);
+            }
+
+            // Add transaction to category
+            category.transactions.push(tx);
+            category.total += tx.amount;
+            category.count++;
+
+            // Update totals
+            statsData.total += tx.amount;
+            statsData.count++;
+            console.log('💰 Total updated to:', statsData.total);
+            console.log('📊 Count updated to:', statsData.count);
+
+            // Update the DOM
+            console.log('🎨 Updating DOM...');
+            updateTotalsInDOM();
+            updateCategoriesInDOM();
+            updateAllTransactionsInDOM();
+
+            // Show success toast with haptic feedback
+            hapticFeedback('success');
+            showToast('Transaction added successfully');
+            console.log('✅ Add complete');
+        }
+
         // Modal swipe-down-to-close gesture handling
         function initModalSwipeGesture() {
             const modals = document.querySelectorAll('.modal');
@@ -1795,6 +2018,7 @@
             if (e.target.classList.contains('modal-overlay')) {
                 closeEditModal();
                 closeDeleteModal();
+                closeAddModal();
             }
         });
     </script>

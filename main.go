@@ -21,6 +21,13 @@ type TransactionRequest struct {
 	Text string `json:"text"`
 }
 
+type ManualTransactionRequest struct {
+	Description string  `json:"description"`
+	Amount      float64 `json:"amount"`
+	Date        string  `json:"date"`
+	Category    string  `json:"category"`
+}
+
 type TransactionResponse struct {
 	Success      bool          `json:"success"`
 	Message      string        `json:"message"`
@@ -104,6 +111,7 @@ func main() {
 	defer dbClient.Close()
 
 	http.HandleFunc("/health", healthHandler)
+	http.HandleFunc("/transaction/manual", manualTransactionHandler(dbClient))
 	http.HandleFunc("/transaction", transactionHandler(openAIClient, dbClient))
 	http.HandleFunc("/transaction/", transactionDetailHandler(dbClient))
 	http.HandleFunc("/stats", statsHandler(dbClient))
@@ -118,6 +126,7 @@ func main() {
 	log.Printf("[Server] Endpoints:")
 	log.Printf("[Server]   GET    /              - Dashboard UI")
 	log.Printf("[Server]   POST   /transaction   - Log new transaction")
+	log.Printf("[Server]   POST   /transaction/manual - Add manual transaction")
 	log.Printf("[Server]   PUT    /transaction/:id - Update transaction")
 	log.Printf("[Server]   DELETE /transaction/:id - Delete transaction")
 	log.Printf("[Server]   GET    /stats         - Get spending statistics")
@@ -194,11 +203,13 @@ func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFu
 			log.Printf("[API] Processing transaction %d/%d", i+1, len(transactions))
 			enriched := enrichTransaction(tx)
 
-			if err := db.SaveTransaction(enriched); err != nil {
+			id, err := db.SaveTransaction(enriched)
+			if err != nil {
 				log.Printf("[API] Failed to save transaction to database: %v", err)
 				continue
 			}
 
+			enriched.ID = id
 			savedTransactions = append(savedTransactions, enriched)
 			total += enriched.Amount
 		}
@@ -246,6 +257,82 @@ func statsHandler(db *DatabaseClient) http.HandlerFunc {
 		log.Printf("[API] Returning stats: %d transactions, %.2f AED total", stats.Count, stats.Total)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
+	}
+}
+
+func manualTransactionHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[API] POST /transaction/manual - Manual transaction request from %s", r.RemoteAddr)
+
+		if r.Method != http.MethodPost {
+			log.Printf("[API] Method not allowed: %s", r.Method)
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req ManualTransactionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[API] Invalid request body: %v", err)
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// Validate required fields
+		if req.Description == "" {
+			log.Printf("[API] Missing required field: description")
+			http.Error(w, "Description is required", http.StatusBadRequest)
+			return
+		}
+		if req.Amount == 0 {
+			log.Printf("[API] Missing required field: amount")
+			http.Error(w, "Amount is required", http.StatusBadRequest)
+			return
+		}
+		if req.Date == "" {
+			log.Printf("[API] Missing required field: date")
+			http.Error(w, "Date is required", http.StatusBadRequest)
+			return
+		}
+		if req.Category == "" {
+			log.Printf("[API] Missing required field: category")
+			http.Error(w, "Category is required", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("[API] Creating manual transaction: %s (%.2f AED, %s, %s)",
+			req.Description, req.Amount, req.Date, req.Category)
+
+		// Create transaction with manual data
+		tx := Transaction{
+			Description: req.Description,
+			Amount:      req.Amount,
+			Date:        req.Date,
+			Category:    req.Category,
+			Confidence:  100, // Manual entry has 100% confidence
+		}
+
+		// Enrich with timestamp and billing cycle
+		enriched := enrichTransaction(tx)
+
+		// Save to database
+		id, err := db.SaveTransaction(enriched)
+		if err != nil {
+			log.Printf("[API] Failed to save transaction to database: %v", err)
+			http.Error(w, "Failed to save transaction", http.StatusInternalServerError)
+			return
+		}
+
+		// Set the ID on the transaction for the response
+		enriched.ID = id
+
+		log.Printf("[API] Manual transaction saved successfully with ID %d", id)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":     true,
+			"message":     "Transaction added successfully",
+			"transaction": enriched,
+		})
 	}
 }
 

@@ -73,7 +73,7 @@ func (c *DatabaseClient) runMigrations() error {
 	return nil
 }
 
-func (c *DatabaseClient) SaveTransaction(tx Transaction) error {
+func (c *DatabaseClient) SaveTransaction(tx Transaction) (int64, error) {
 	query := `
 		INSERT INTO transactions
 		(description, amount, transaction_date, category, confidence, billing_cycle, created_at)
@@ -82,7 +82,7 @@ func (c *DatabaseClient) SaveTransaction(tx Transaction) error {
 
 	log.Printf("[Database] Saving transaction: %s (%.2f AED)", tx.Description, tx.Amount)
 
-	_, err := c.db.Exec(
+	result, err := c.db.Exec(
 		query,
 		tx.Description,
 		tx.Amount,
@@ -95,11 +95,17 @@ func (c *DatabaseClient) SaveTransaction(tx Transaction) error {
 
 	if err != nil {
 		log.Printf("[Database] Failed to save transaction: %v", err)
-		return fmt.Errorf("failed to save transaction: %w", err)
+		return 0, fmt.Errorf("failed to save transaction: %w", err)
 	}
 
-	log.Printf("[Database] Transaction saved successfully")
-	return nil
+	id, err := result.LastInsertId()
+	if err != nil {
+		log.Printf("[Database] Failed to get last insert ID: %v", err)
+		return 0, fmt.Errorf("failed to get last insert ID: %w", err)
+	}
+
+	log.Printf("[Database] Transaction saved successfully with ID %d", id)
+	return id, nil
 }
 
 func (c *DatabaseClient) GetStats() (*StatsResponse, error) {

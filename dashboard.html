@@ -1019,23 +1019,6 @@
                 '<div class="total-count">' + data.count + ' transaction' + (data.count !== 1 ? 's' : '') + ' in ' + escapeHtml(data.cycle) + '</div>' +
                 '</div>';
 
-            // Last transaction
-            if (data.lastTransaction) {
-                const txDate = new Date(data.lastTransaction.date);
-                const today = new Date();
-                const isToday = txDate.toDateString() === today.toDateString();
-                const dateStr = isToday ? 'today' : formatDate(txDate);
-
-                html +=
-                    '<div class="last-transaction">' +
-                    '<div class="last-transaction-title">🕐 Last Transaction</div>' +
-                    '<div class="last-transaction-desc">' + escapeHtml(data.lastTransaction.description) + '</div>' +
-                    '<div class="last-transaction-details">' +
-                    formatCurrency(data.lastTransaction.amount) + ' • ' + dateStr +
-                    '</div>' +
-                    '</div>';
-            }
-
             // Categories
             if (data.categories && data.categories.length > 0) {
                 html += '<div class="categories-section"><div class="section-title">By Category</div>';

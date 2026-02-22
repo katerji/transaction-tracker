@@ -281,6 +281,33 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 	}, nil
 }
 
+func (c *DatabaseClient) GetAllTransactionsGroupedByCycle() ([]Transaction, error) {
+	rows, err := c.db.Query(`
+		SELECT id, description, amount, transaction_date, category, confidence, billing_cycle, created_at
+		FROM transactions
+		ORDER BY transaction_date DESC, created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []Transaction
+	for rows.Next() {
+		var tx Transaction
+		if err := rows.Scan(&tx.ID, &tx.Description, &tx.Amount, &tx.Date, &tx.Category, &tx.Confidence, &tx.BillingCycle, &tx.Timestamp); err != nil {
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		transactions = append(transactions, tx)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating transactions: %w", err)
+	}
+
+	return transactions, nil
+}
+
 func (c *DatabaseClient) UpdateTransaction(id int64, tx Transaction) error {
 	query := `
 		UPDATE transactions

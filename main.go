@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -115,6 +116,7 @@ func main() {
 	http.HandleFunc("/transaction", transactionHandler(openAIClient, dbClient))
 	http.HandleFunc("/transaction/", transactionDetailHandler(dbClient))
 	http.HandleFunc("/stats", statsHandler(dbClient))
+	http.HandleFunc("/export", exportHandler(dbClient))
 	http.HandleFunc("/", dashboardHandler)
 
 	addr := ":" + config.Port
@@ -130,6 +132,7 @@ func main() {
 	log.Printf("[Server]   PUT    /transaction/:id - Update transaction")
 	log.Printf("[Server]   DELETE /transaction/:id - Delete transaction")
 	log.Printf("[Server]   GET    /stats         - Get spending statistics")
+	log.Printf("[Server]   GET    /export        - Export CSV")
 	log.Printf("[Server]   GET    /health        - Health check")
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("[Server] Server ready at http://localhost:%s", config.Port)
@@ -257,6 +260,70 @@ func statsHandler(db *DatabaseClient) http.HandlerFunc {
 		log.Printf("[API] Returning stats: %d transactions, %.2f AED total", stats.Count, stats.Total)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
+	}
+}
+
+func exportHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[API] GET /export - CSV export request from %s", r.RemoteAddr)
+
+		if r.Method != http.MethodGet {
+			log.Printf("[API] Method not allowed: %s", r.Method)
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		transactions, err := db.GetAllTransactionsGroupedByCycle()
+		if err != nil {
+			log.Printf("[API] Failed to get transactions for export: %v", err)
+			http.Error(w, "Failed to export transactions", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="transactions.csv"`)
+
+		writer := csv.NewWriter(w)
+		defer writer.Flush()
+
+		// Header row
+		writer.Write([]string{"Date", "Description", "Amount (AED)", "Category"})
+
+		var grandTotal float64
+		var currentCycle string
+		var cycleSubtotal float64
+
+		for _, tx := range transactions {
+			if tx.BillingCycle != currentCycle {
+				// Write subtotal for previous cycle (if any)
+				if currentCycle != "" {
+					writer.Write([]string{"", "Subtotal", fmt.Sprintf("%.2f", cycleSubtotal), ""})
+					writer.Write([]string{"", "", "", ""})
+					grandTotal += cycleSubtotal
+					cycleSubtotal = 0
+				}
+				currentCycle = tx.BillingCycle
+				writer.Write([]string{fmt.Sprintf("--- %s ---", currentCycle), "", "", ""})
+			}
+
+			writer.Write([]string{tx.Date, tx.Description, fmt.Sprintf("%.2f", tx.Amount), tx.Category})
+
+			if tx.Category != "Income/Transfer" {
+				cycleSubtotal += tx.Amount
+			}
+		}
+
+		// Write final cycle subtotal
+		if currentCycle != "" {
+			writer.Write([]string{"", "Subtotal", fmt.Sprintf("%.2f", cycleSubtotal), ""})
+			writer.Write([]string{"", "", "", ""})
+			grandTotal += cycleSubtotal
+		}
+
+		// Grand total
+		writer.Write([]string{"", "Grand Total", fmt.Sprintf("%.2f", grandTotal), ""})
+
+		log.Printf("[API] CSV export completed: %d transactions", len(transactions))
 	}
 }
 

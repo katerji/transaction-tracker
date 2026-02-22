@@ -4,9 +4,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -117,6 +120,7 @@ func main() {
 	http.HandleFunc("/transaction/", transactionDetailHandler(dbClient))
 	http.HandleFunc("/stats", statsHandler(dbClient))
 	http.HandleFunc("/export", exportHandler(dbClient))
+	http.HandleFunc("/import", importHandler(dbClient))
 	http.HandleFunc("/", dashboardHandler)
 
 	addr := ":" + config.Port
@@ -133,6 +137,7 @@ func main() {
 	log.Printf("[Server]   DELETE /transaction/:id - Delete transaction")
 	log.Printf("[Server]   GET    /stats         - Get spending statistics")
 	log.Printf("[Server]   GET    /export        - Export CSV")
+	log.Printf("[Server]   POST   /import        - Import CSV")
 	log.Printf("[Server]   GET    /health        - Health check")
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("[Server] Server ready at http://localhost:%s", config.Port)
@@ -324,6 +329,142 @@ func exportHandler(db *DatabaseClient) http.HandlerFunc {
 		writer.Write([]string{"", "Grand Total", fmt.Sprintf("%.2f", grandTotal), ""})
 
 		log.Printf("[API] CSV export completed: %d transactions", len(transactions))
+	}
+}
+
+type ImportResponse struct {
+	Success    bool     `json:"success"`
+	Imported   int      `json:"imported"`
+	Duplicates int      `json:"duplicates"`
+	Errors     []string `json:"errors"`
+	Message    string   `json:"message"`
+}
+
+func importHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[API] POST /import - CSV import request from %s", r.RemoteAddr)
+
+		if r.Method != http.MethodPost {
+			log.Printf("[API] Method not allowed: %s", r.Method)
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			log.Printf("[API] Failed to parse multipart form: %v", err)
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			log.Printf("[API] No file uploaded: %v", err)
+			http.Error(w, "No file uploaded", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		reader := csv.NewReader(file)
+		reader.FieldsPerRecord = -1 // allow variable field counts
+
+		var imported, duplicates int
+		var errors []string
+		rowNum := 0
+
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			rowNum++
+
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("row %d: %v", rowNum, err))
+				continue
+			}
+
+			// Skip header row
+			if rowNum == 1 {
+				continue
+			}
+
+			// Skip rows with fewer than 4 columns
+			if len(record) < 4 {
+				continue
+			}
+
+			// Skip blank rows (all fields empty)
+			allEmpty := true
+			for _, field := range record {
+				if strings.TrimSpace(field) != "" {
+					allEmpty = false
+					break
+				}
+			}
+			if allEmpty {
+				continue
+			}
+
+			// Skip cycle headers (Date starts with ---)
+			if strings.HasPrefix(record[0], "---") {
+				continue
+			}
+
+			// Skip Subtotal and Grand Total rows
+			desc := strings.TrimSpace(record[1])
+			if desc == "Subtotal" || desc == "Grand Total" {
+				continue
+			}
+
+			// Parse data row: Date, Description, Amount, Category
+			date := strings.TrimSpace(record[0])
+			description := desc
+			amountStr := strings.TrimSpace(record[2])
+			category := strings.TrimSpace(record[3])
+
+			if date == "" || description == "" || category == "" {
+				continue
+			}
+
+			amount, err := strconv.ParseFloat(amountStr, 64)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("row %d: invalid amount '%s'", rowNum, amountStr))
+				continue
+			}
+
+			tx := Transaction{
+				Description: description,
+				Amount:      amount,
+				Date:        date,
+				Category:    category,
+				Confidence:  100,
+			}
+			enriched := enrichTransaction(tx)
+
+			_, err = db.SaveTransaction(enriched)
+			if err != nil {
+				if strings.Contains(err.Error(), "UNIQUE constraint") {
+					duplicates++
+				} else {
+					errors = append(errors, fmt.Sprintf("row %d: %v", rowNum, err))
+				}
+				continue
+			}
+
+			imported++
+		}
+
+		message := fmt.Sprintf("Imported %d transactions (%d duplicates skipped, %d errors)", imported, duplicates, len(errors))
+		log.Printf("[API] Import completed: %s", message)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ImportResponse{
+			Success:    true,
+			Imported:   imported,
+			Duplicates: duplicates,
+			Errors:     errors,
+			Message:    message,
+		})
 	}
 }
 

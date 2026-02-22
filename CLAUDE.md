@@ -9,6 +9,7 @@ go run *.go             # starts on :8080
 ## Build & deploy
 - `docker compose up -d` for local Docker
 - `fly deploy` for Fly.io (config in fly.toml)
+- Pushes to `main` auto-deploy to Fly.io via GitHub Actions (`.github/workflows/deploy.yml`)
 - CGO is required (go-sqlite3) — the Dockerfile handles this
 
 ## Architecture

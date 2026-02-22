@@ -59,6 +59,8 @@ fly secrets set OPENAI_API_KEY=your-key-here
 fly deploy
 ```
 
+Pushes to `main` automatically deploy to Fly.io via GitHub Actions.
+
 ## How it works
 
 1. SMS text is sent via POST to `/transaction`

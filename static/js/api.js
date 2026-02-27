@@ -35,3 +35,15 @@ export async function removeTransaction(id) {
   if (!res.ok) throw new Error('Failed to delete transaction');
   return res.json();
 }
+
+export async function parseTransaction(text) {
+  const res = await fetch('/transaction', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error('Failed to parse transaction');
+  const result = await res.json();
+  if (!result.success) throw new Error(result.message || 'No transactions found');
+  return result;
+}

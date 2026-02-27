@@ -376,6 +376,15 @@
 
   </div><!-- end max-w-lg container -->
 
+  <!-- ==================== FLOATING PASTE SMS BUTTON ==================== -->
+  <button @click="handlePasteFab()"
+          class="fixed right-5 bottom-[10.5rem] z-50 w-14 h-14 rounded-full bg-card border border-card-border text-primary flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-transform"
+          title="Paste SMS">
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+    </svg>
+  </button>
+
   <!-- ==================== FLOATING ADD BUTTON ==================== -->
   <button @click="openAdd()"
           class="fixed right-5 bottom-[5.5rem] z-50 w-14 h-14 rounded-full bg-add-gradient text-white flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-110 active:scale-95 transition-transform"
@@ -532,6 +541,39 @@
         <button @click="closeDelete()" class="flex-1 py-3 bg-gray-700 text-gray-300 rounded-xl text-sm font-semibold hover:bg-gray-600 transition">Cancel</button>
         <button @click="confirmDelete()" class="flex-1 py-3 bg-danger text-white rounded-xl text-sm font-semibold hover:bg-red-600 transition">Delete</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ==================== PASTE SMS MODAL (Bottom Sheet) ==================== -->
+  <div x-show="pasteOpen" x-transition.opacity
+       @click.self="closePaste()"
+       class="fixed inset-0 bg-black/70 z-[1000] flex items-end md:items-center justify-center">
+    <div x-show="pasteOpen"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-y-full md:translate-y-0 md:scale-95 md:opacity-0"
+         x-transition:enter-end="translate-y-0 md:scale-100 md:opacity-100"
+         x-init="initModalSwipe($el)"
+         class="bg-card rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-[500px] md:w-[90%] shadow-2xl relative max-h-[90vh] overflow-y-auto modal-sheet">
+      <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-2 mb-5 md:hidden cursor-grab active:cursor-grabbing modal-drag-handle"></div>
+      <div class="text-xl font-semibold text-gray-100 mb-5 modal-header">Paste SMS</div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-400 mb-1.5">Bank SMS Message</label>
+          <textarea x-model="pasteText"
+                    rows="5"
+                    placeholder="Paste your bank SMS here..."
+                    class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-primary transition resize-none"></textarea>
+        </div>
+      </div>
+      <button @click="submitPaste()"
+              :disabled="pasteLoading"
+              class="w-full mt-6 py-3 bg-hero-gradient text-white rounded-xl font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2">
+        <svg x-show="pasteLoading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span x-text="pasteLoading ? 'Parsing...' : 'Parse SMS'"></span>
+      </button>
     </div>
   </div>
 

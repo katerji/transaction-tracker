@@ -9,7 +9,7 @@ import {
   nowLocalInput,
 } from './utils.js';
 
-import { fetchStats, createTransaction, updateTransaction, removeTransaction } from './api.js';
+import { fetchStats, createTransaction, updateTransaction, removeTransaction, parseTransaction } from './api.js';
 import { computeTodaySpend, computeBiggestExpense, computeDailyAverage, computeTopCategory } from './tabs/dashboard.js';
 import { computeSearchedAndSorted, computeGroupedByDate } from './tabs/transactions.js';
 
@@ -56,6 +56,12 @@ export default function app() {
     addOpen: false,
     addForm: { description: '', amount: '', date: '', category: 'Food & Dining' },
 
+    // Paste SMS
+    canAutoClipboard: false,
+    pasteOpen: false,
+    pasteText: '',
+    pasteLoading: false,
+
     // Toast
     toastMessage: '',
     toastVisible: false,
@@ -81,6 +87,8 @@ export default function app() {
     ],
 
     async init() {
+      this.canAutoClipboard = /Android.*Chrome\//.test(navigator.userAgent)
+        && !!navigator.clipboard?.readText;
       await this.loadStats();
       this.initPullToRefresh();
     },
@@ -385,6 +393,53 @@ export default function app() {
       this.categories.sort((a, b) => b.total - a.total);
     },
 
+    // Paste SMS
+    async handlePasteFab() {
+      hapticFeedback('light');
+      if (this.canAutoClipboard) {
+        try {
+          const text = await navigator.clipboard.readText();
+          await this.submitPasteText(text);
+        } catch (e) {
+          this.showToast('Error: ' + e.message);
+        }
+      } else {
+        this.pasteText = '';
+        this.pasteOpen = true;
+      }
+    },
+
+    async submitPasteText(text) {
+      if (!text || !text.trim()) {
+        this.showToast('Please paste some text first');
+        return;
+      }
+      this.pasteLoading = true;
+      try {
+        const result = await parseTransaction(text.trim());
+        this.pasteOpen = false;
+        this.pasteText = '';
+        await this.loadStats();
+        const count = result.transactions?.length || 1;
+        hapticFeedback('success');
+        this.showToast('Added ' + count + ' transaction' + (count !== 1 ? 's' : ''));
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      } finally {
+        this.pasteLoading = false;
+      }
+    },
+
+    async submitPaste() {
+      await this.submitPasteText(this.pasteText);
+    },
+
+    closePaste() {
+      this.pasteOpen = false;
+      this.pasteText = '';
+      this.pasteLoading = false;
+    },
+
     // Toast
     showToast(message) {
       this.toastMessage = message;
@@ -485,6 +540,7 @@ export default function app() {
             this.editOpen = false;
             this.deleteOpen = false;
             this.addOpen = false;
+            this.pasteOpen = false;
             el.style.transform = 'translateY(0)';
           }, 300);
         } else {

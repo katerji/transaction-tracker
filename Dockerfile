@@ -14,7 +14,7 @@ RUN go mod download || true
 
 # Copy source code
 COPY *.go ./
-COPY dashboard.html ./
+COPY static/ ./static/
 
 # Build the application with CGO enabled for SQLite
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o transaction-tracker .

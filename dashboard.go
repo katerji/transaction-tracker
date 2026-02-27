@@ -1,6 +1,6 @@
 package main
 
-import _ "embed"
+import "embed"
 
-//go:embed dashboard.html
-var dashboardHTML string
+//go:embed static
+var staticFiles embed.FS

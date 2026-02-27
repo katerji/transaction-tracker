@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -114,6 +115,13 @@ func main() {
 	}
 	defer dbClient.Close()
 
+	// Serve static JS files from embedded FS
+	staticSub, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		log.Fatalf("[Server] Failed to create sub filesystem: %v", err)
+	}
+	staticHandler := http.FileServer(http.FS(staticSub))
+
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/transaction/manual", manualTransactionHandler(dbClient))
 	http.HandleFunc("/transaction", transactionHandler(openAIClient, dbClient))
@@ -121,6 +129,7 @@ func main() {
 	http.HandleFunc("/stats", statsHandler(dbClient))
 	http.HandleFunc("/export", exportHandler(dbClient))
 	http.HandleFunc("/import", importHandler(dbClient))
+	http.Handle("/js/", staticHandler)
 	http.HandleFunc("/", dashboardHandler)
 
 	addr := ":" + config.Port
@@ -604,8 +613,15 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[API] GET / - Dashboard request from %s", r.RemoteAddr)
+
+	indexHTML, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		http.Error(w, "Dashboard not found", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(dashboardHTML))
+	w.Write(indexHTML)
 }
 
 func transactionDetailHandler(db *DatabaseClient) http.HandlerFunc {

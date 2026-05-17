@@ -493,6 +493,7 @@
 
   <!-- ==================== FLOATING PASTE SMS BUTTON ==================== -->
   <button @click="handlePasteFab()"
+          x-show="currentTab !== 'rules' && !(currentTab === 'categories' && categoriesManageMode)"
           class="fixed right-5 bottom-[10.5rem] z-50 w-14 h-14 rounded-full bg-card border border-card-border text-primary flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-transform"
           title="Paste SMS">
     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -502,6 +503,7 @@
 
   <!-- ==================== FLOATING ADD BUTTON ==================== -->
   <button @click="openAdd()"
+          x-show="currentTab !== 'rules' && !(currentTab === 'categories' && categoriesManageMode)"
           class="fixed right-5 bottom-[5.5rem] z-50 w-14 h-14 rounded-full bg-add-gradient text-white flex items-center justify-center shadow-lg shadow-primary/30 hover:scale-110 active:scale-95 transition-transform"
           title="Add Transaction">
     <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">

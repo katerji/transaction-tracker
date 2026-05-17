@@ -28,23 +28,6 @@ export function formatDateTime(dateTimeStr) {
   });
 }
 
-export function getCategoryEmoji(category) {
-  const emojis = {
-    'Groceries': '🛒',
-    'Dining Out': '🍔',
-    'Transport': '🚗',
-    'Shopping': '🛍️',
-    'Subscriptions': '📱',
-    'Bills & Utilities': '💳',
-    'Health': '💊',
-    'Travel': '✈️',
-    'Entertainment': '🎬',
-    'Cash Withdrawal': '💵',
-    'Income/Transfer': '💰',
-  };
-  return emojis[category] || '📌';
-}
-
 export function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;

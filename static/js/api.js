@@ -1,7 +1,7 @@
 // Backend API communication
 
-export async function fetchStats() {
-  const res = await fetch('/stats');
+export async function fetchDashboard() {
+  const res = await fetch('/dashboard');
   if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Failed to load stats');
@@ -100,4 +100,37 @@ export async function moveRulePriority(id, direction) {
   });
   if (!res.ok) throw new Error('Failed to move rule');
   return res.json();
+}
+
+export async function fetchCategories() {
+  const res = await fetch('/categories');
+  if (!res.ok) throw new Error('Failed to fetch categories');
+  return res.json();
+}
+
+export async function createCategory(data) {
+  const res = await fetch('/categories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create category');
+  return res.json();
+}
+
+export async function updateCategory(id, data) {
+  const res = await fetch('/categories/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update category');
+  return res.json();
+}
+
+export async function deleteCategory(id) {
+  const res = await fetch('/categories/' + id, { method: 'DELETE' });
+  let data;
+  try { data = await res.json(); } catch { data = { success: false, message: 'Request failed' }; }
+  return { status: res.status, data };
 }

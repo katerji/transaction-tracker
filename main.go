@@ -42,14 +42,15 @@ type TransactionResponse struct {
 }
 
 type StatsResponse struct {
-	Success         bool                `json:"success"`
-	Message         string              `json:"message"`
-	Cycle           string              `json:"cycle"`
-	Total           float64             `json:"total"`
-	Count           int                 `json:"count"`
-	Categories      []CategoryStats     `json:"categories,omitempty"`
-	LastTransaction *TransactionSummary `json:"lastTransaction,omitempty"`
-	AllTransactions []Transaction       `json:"allTransactions,omitempty"`
+	Success             bool                `json:"success"`
+	Message             string              `json:"message"`
+	Cycle               string              `json:"cycle"`
+	Total               float64             `json:"total"`
+	Count               int                 `json:"count"`
+	Categories          []CategoryStats     `json:"categories,omitempty"`
+	LastTransaction     *TransactionSummary `json:"lastTransaction,omitempty"`
+	AllTransactions     []Transaction       `json:"allTransactions,omitempty"`
+	CategoryDefinitions []Category          `json:"categoryDefinitions,omitempty"`
 }
 
 type CategoryStats struct {
@@ -126,13 +127,15 @@ func main() {
 	http.HandleFunc("/transaction/manual", manualTransactionHandler(dbClient))
 	http.HandleFunc("/transaction", transactionHandler(openAIClient, dbClient))
 	http.HandleFunc("/transaction/", transactionDetailHandler(dbClient))
-	http.HandleFunc("/stats", statsHandler(dbClient))
+	http.HandleFunc("/dashboard", dashboardHandler(dbClient))
 	http.HandleFunc("/export", exportHandler(dbClient))
 	http.HandleFunc("/import", importHandler(dbClient))
 	http.HandleFunc("/rules", rulesHandler(dbClient))
 	http.HandleFunc("/rules/", ruleDetailHandler(dbClient))
+	http.HandleFunc("/categories", categoriesHandler(dbClient))
+	http.HandleFunc("/categories/", categoryDetailHandler(dbClient))
 	http.Handle("/js/", staticHandler)
-	http.HandleFunc("/", dashboardHandler)
+	http.HandleFunc("/", indexHandler)
 
 	addr := ":" + config.Port
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -146,9 +149,13 @@ func main() {
 	log.Printf("[Server]   POST   /transaction/manual - Add manual transaction")
 	log.Printf("[Server]   PUT    /transaction/:id - Update transaction")
 	log.Printf("[Server]   DELETE /transaction/:id - Delete transaction")
-	log.Printf("[Server]   GET    /stats         - Get spending statistics")
+	log.Printf("[Server]   GET    /dashboard     - Get dashboard data (renamed from /stats)")
 	log.Printf("[Server]   GET    /export        - Export CSV")
 	log.Printf("[Server]   POST   /import        - Import CSV")
+	log.Printf("[Server]   GET    /categories    - Get all categories")
+	log.Printf("[Server]   POST   /categories    - Create category")
+	log.Printf("[Server]   PUT    /categories/:id - Update category")
+	log.Printf("[Server]   DELETE /categories/:id - Delete category")
 	log.Printf("[Server]   GET    /rules         - Get all merchant rules")
 	log.Printf("[Server]   POST   /rules         - Create merchant rule")
 	log.Printf("[Server]   PUT    /rules/:id     - Update merchant rule")
@@ -200,8 +207,28 @@ func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFu
 
 		log.Printf("[API] Processing transaction text: %s", req.Text)
 
+		// Fetch categories for OpenAI prompt
+		categories, err := db.GetAllCategories()
+		if err != nil {
+			log.Printf("[API] Failed to get categories: %v", err)
+			http.Error(w, "Failed to retrieve categories", http.StatusInternalServerError)
+			return
+		}
+
+		if len(categories) == 0 {
+			log.Printf("[API] No categories defined — cannot parse transactions")
+			http.Error(w, "No categories defined", http.StatusInternalServerError)
+			return
+		}
+
+		// Build emoji map for response
+		emojiMap := make(map[string]string, len(categories))
+		for _, cat := range categories {
+			emojiMap[cat.Name] = cat.Emoji
+		}
+
 		// Parse transactions using OpenAI
-		transactions, err := openAI.ParseTransactions(req.Text)
+		transactions, err := openAI.ParseTransactions(req.Text, categories)
 		if err != nil {
 			log.Printf("[API] OpenAI parsing error: %v", err)
 			http.Error(w, "Failed to parse transactions", http.StatusInternalServerError)
@@ -255,7 +282,11 @@ func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFu
 		for i, tx := range savedTransactions {
 			message += fmt.Sprintf("%d. %s\n", i+1, tx.Description)
 			message += fmt.Sprintf("   💰 Amount: %.2f AED\n", tx.Amount)
-			message += fmt.Sprintf("   📁 Category: %s %s (%d%% confidence)\n", getCategoryEmoji(tx.Category), tx.Category, tx.Confidence)
+			emoji := emojiMap[tx.Category]
+			if emoji == "" {
+				emoji = "📌"
+			}
+			message += fmt.Sprintf("   📁 Category: %s %s (%d%% confidence)\n", emoji, tx.Category, tx.Confidence)
 			message += fmt.Sprintf("   📅 Cycle: %s\n\n", tx.BillingCycle)
 		}
 		message += fmt.Sprintf("━━━━━━━━━━━━━━━\n💵 Total: %.2f AED", total)
@@ -271,9 +302,9 @@ func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFu
 	}
 }
 
-func statsHandler(db *DatabaseClient) http.HandlerFunc {
+func dashboardHandler(db *DatabaseClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[API] GET /stats - Request from %s", r.RemoteAddr)
+		log.Printf("[API] GET /dashboard - Request from %s", r.RemoteAddr)
 
 		if r.Method != http.MethodGet {
 			log.Printf("[API] Method not allowed: %s", r.Method)
@@ -311,6 +342,20 @@ func exportHandler(db *DatabaseClient) http.HandlerFunc {
 			return
 		}
 
+		// Fetch categories and build excluded map
+		allCats, err := db.GetAllCategories()
+		if err != nil {
+			log.Printf("[API] Failed to get categories for export: %v", err)
+			http.Error(w, "Failed to export", http.StatusInternalServerError)
+			return
+		}
+		excludedCats := make(map[string]bool)
+		for _, cat := range allCats {
+			if cat.ExcludeFromTotals {
+				excludedCats[cat.Name] = true
+			}
+		}
+
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="transactions.csv"`)
 
@@ -339,7 +384,7 @@ func exportHandler(db *DatabaseClient) http.HandlerFunc {
 
 			writer.Write([]string{tx.Date, tx.Description, fmt.Sprintf("%.2f", tx.Amount), tx.Category})
 
-			if tx.Category != "Income/Transfer" {
+			if !excludedCats[tx.Category] {
 				cycleSubtotal += tx.Amount
 			}
 		}
@@ -791,26 +836,6 @@ func ruleDetailHandler(db *DatabaseClient) http.HandlerFunc {
 	}
 }
 
-func getCategoryEmoji(category string) string {
-	emojis := map[string]string{
-		"Groceries":         "🛒",
-		"Dining Out":        "🍔",
-		"Transport":         "🚗",
-		"Shopping":          "🛍️",
-		"Subscriptions":     "📱",
-		"Bills & Utilities": "💳",
-		"Health":            "💊",
-		"Travel":            "✈️",
-		"Entertainment":     "🎬",
-		"Cash Withdrawal":   "💵",
-		"Income/Transfer":   "💰",
-	}
-	if emoji, ok := emojis[category]; ok {
-		return emoji
-	}
-	return "📌"
-}
-
 func pluralize(count int) string {
 	if count == 1 {
 		return ""
@@ -818,7 +843,123 @@ func pluralize(count int) string {
 	return "s"
 }
 
-func dashboardHandler(w http.ResponseWriter, r *http.Request) {
+func categoriesHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			log.Printf("[API] GET /categories - Request from %s", r.RemoteAddr)
+			cats, err := db.GetAllCategories()
+			if err != nil {
+				log.Printf("[API] Failed to get categories: %v", err)
+				http.Error(w, "Failed to retrieve categories", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":    true,
+				"categories": cats,
+			})
+
+		case http.MethodPost:
+			log.Printf("[API] POST /categories - Create category from %s", r.RemoteAddr)
+			var req struct {
+				Name              string `json:"name"`
+				Emoji             string `json:"emoji"`
+				ExcludeFromTotals bool   `json:"excludeFromTotals"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+			if req.Name == "" {
+				http.Error(w, "Name is required", http.StatusBadRequest)
+				return
+			}
+			cat, err := db.CreateCategory(req.Name, req.Emoji, req.ExcludeFromTotals)
+			if err != nil {
+				log.Printf("[API] Failed to create category: %v", err)
+				http.Error(w, "Failed to create category", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":  true,
+				"category": cat,
+			})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		idStr := path[len("/categories/"):]
+		var id int64
+		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+			http.Error(w, "Invalid category ID", http.StatusBadRequest)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodPut:
+			log.Printf("[API] PUT /categories/%d - Update from %s", id, r.RemoteAddr)
+			var req struct {
+				Name              string `json:"name"`
+				Emoji             string `json:"emoji"`
+				ExcludeFromTotals bool   `json:"excludeFromTotals"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+			if req.Name == "" {
+				http.Error(w, "Name is required", http.StatusBadRequest)
+				return
+			}
+			if err := db.UpdateCategory(id, req.Name, req.Emoji, req.ExcludeFromTotals); err != nil {
+				log.Printf("[API] Failed to update category: %v", err)
+				if err.Error() == "category not found" {
+					http.Error(w, "Category not found", http.StatusNotFound)
+				} else {
+					http.Error(w, "Failed to update category", http.StatusInternalServerError)
+				}
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+
+		case http.MethodDelete:
+			log.Printf("[API] DELETE /categories/%d - Delete from %s", id, r.RemoteAddr)
+			if err := db.DeleteCategory(id); err != nil {
+				log.Printf("[API] Failed to delete category: %v", err)
+				errMsg := err.Error()
+				if strings.HasPrefix(errMsg, "cannot delete:") {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"message": errMsg,
+					})
+				} else if errMsg == "category not found" {
+					http.Error(w, "Category not found", http.StatusNotFound)
+				} else {
+					http.Error(w, "Failed to delete category", http.StatusInternalServerError)
+				}
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return

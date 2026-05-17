@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type OpenAIClient struct {
@@ -45,7 +46,14 @@ type openAIResponse struct {
 	} `json:"choices"`
 }
 
-const systemPrompt = `You are a financial transaction parser for UAE-based transactions. Extract transaction details from SMS messages and convert ALL amounts to AED (UAE Dirham).
+func BuildSystemPrompt(categories []Category) string {
+	names := make([]string, len(categories))
+	for i, c := range categories {
+		names[i] = fmt.Sprintf("%q", c.Name)
+	}
+	categoryList := strings.Join(names, ", ")
+
+	return `You are a financial transaction parser for UAE-based transactions. Extract transaction details from SMS messages and convert ALL amounts to AED (UAE Dirham).
 
 Parse the following message which may contain ONE or MORE transaction SMS messages and return ONLY a valid JSON array of transaction objects.
 
@@ -53,7 +61,7 @@ Each transaction object must have these exact fields:
 - date: transaction datetime in YYYY-MM-DD HH:MM:SS format (use 00:00:00 if time not available, infer current year if missing)
 - description: merchant or transaction description
 - amount: numeric value CONVERTED TO AED as a number (positive for expenses, negative for income/deposits)
-- category: exactly ONE of these categories: "Groceries", "Dining Out", "Transport", "Shopping", "Subscriptions", "Bills & Utilities", "Health", "Travel", "Entertainment", "Cash Withdrawal", "Income/Transfer"
+- category: exactly ONE of these categories: ` + categoryList + `
 - confidence: number from 0-100
 
 Currency Conversion Rules:
@@ -90,15 +98,9 @@ Example response for multiple transactions:
     "amount": 25.50,
     "category": "Dining Out",
     "confidence": 95
-  },
-  {
-    "date": "2026-01-25 09:15:00",
-    "description": "Careem Ride",
-    "amount": 35.00,
-    "category": "Transport",
-    "confidence": 98
   }
 ]`
+}
 
 func NewOpenAIClient(apiKey string) *OpenAIClient {
 	return &OpenAIClient{
@@ -107,13 +109,13 @@ func NewOpenAIClient(apiKey string) *OpenAIClient {
 	}
 }
 
-func (c *OpenAIClient) ParseTransactions(text string) ([]Transaction, error) {
+func (c *OpenAIClient) ParseTransactions(text string, categories []Category) ([]Transaction, error) {
 	reqBody := openAIRequest{
 		Model: "gpt-4o-mini",
 		Messages: []openAIMessage{
 			{
 				Role:    "system",
-				Content: systemPrompt,
+				Content: BuildSystemPrompt(categories),
 			},
 			{
 				Role:    "user",

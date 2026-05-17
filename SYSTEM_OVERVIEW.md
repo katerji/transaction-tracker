@@ -68,7 +68,12 @@ Transaction Tracker is a lightweight, self-hosted expense tracking system that a
 │  │  • POST /transaction/manual → Add manual transaction   │    │
 │  │  • PUT  /transaction/:id    → Update transaction       │    │
 │  │  • DELETE /transaction/:id  → Delete transaction       │    │
-│  │  • GET  /stats              → Billing cycle stats      │    │
+│  │  • GET  /dashboard          → Billing cycle stats +    │    │
+│  │                               category definitions     │    │
+│  │  • GET  /categories         → List categories         │    │
+│  │  • POST /categories         → Create category         │    │
+│  │  • PUT  /categories/:id     → Update category         │    │
+│  │  • DELETE /categories/:id   → Delete category         │    │
 │  │  • GET  /export             → CSV export               │    │
 │  │  • POST /import             → CSV import               │    │
 │  │  • GET  /rules              → List merchant rules      │    │
@@ -136,13 +141,14 @@ User Input (SMS Text)
     │
     └──→ Dashboard refreshes automatically
             │
-            └──→ GET /stats
+            └──→ GET /dashboard
                     │
                     └──→ DatabaseClient.GetStats()
-                            ├──→ Query current cycle totals
+                            ├──→ Fetch category definitions
+                            ├──→ Query current cycle totals (using exclude_from_totals)
                             ├──→ Group by category
                             ├──→ Fetch transactions per category
-                            └──→ Return StatsResponse
+                            └──→ Return StatsResponse (incl. CategoryDefinitions)
 ```
 
 ---
@@ -206,38 +212,52 @@ transaction-tracker/
 │
 ├── main.go              # HTTP server, routing, handlers, main application logic
 │   ├── Config struct
-│   ├── Request/Response types
+│   ├── Request/Response types (incl. StatsResponse with CategoryDefinitions)
 │   ├── loadConfig()
 │   ├── main() - entry point
 │   ├── healthHandler()
 │   ├── transactionHandler()
-│   ├── statsHandler()
-│   ├── dashboardHandler()
+│   ├── dashboardHandler()      # GET /dashboard (stats + category definitions)
+│   ├── indexHandler()          # GET / (serves HTML)
+│   ├── categoriesHandler()     # GET/POST /categories
+│   ├── categoryDetailHandler() # PUT/DELETE /categories/:id
 │   ├── transactionDetailHandler()
 │   ├── updateTransactionHandler()
 │   ├── deleteTransactionHandler()
+│   ├── rulesHandler()
+│   ├── ruleDetailHandler()
 │   ├── enrichTransaction()
 │   ├── calculateBillingCycle()
-│   ├── getCategoryEmoji()
 │   └── pluralize()
 │
 ├── database.go          # SQLite database client and operations
 │   ├── DatabaseClient struct
+│   ├── Category struct
+│   ├── MerchantRule struct
 │   ├── NewDatabaseClient()
 │   ├── runMigrations()
+│   ├── seedCategories()
+│   ├── seedMerchantRules()
+│   ├── GetAllCategories()
+│   ├── CreateCategory()
+│   ├── UpdateCategory()        # cascades rename to transactions + rules
+│   ├── DeleteCategory()        # blocked if transactions reference it
 │   ├── SaveTransaction()
-│   ├── GetStats()
+│   ├── GetStats()              # now includes CategoryDefinitions, uses exclude_from_totals
 │   ├── UpdateTransaction()
 │   ├── DeleteTransaction()
+│   ├── GetAllRules() / CreateRule() / UpdateRule() / DeleteRule()
+│   ├── ApplyRuleSingle() / ApplyAllRules() / MoveRulePriority()
+│   ├── FindMatchingRule()
 │   └── Close()
 │
 ├── openai.go            # OpenAI API client for transaction parsing
 │   ├── OpenAIClient struct
 │   ├── Transaction struct (shared data model)
 │   ├── openAIRequest/Response types
-│   ├── systemPrompt constant
+│   ├── BuildSystemPrompt(categories []Category) string  # dynamic, DB-driven
 │   ├── NewOpenAIClient()
-│   └── ParseTransactions()
+│   └── ParseTransactions(text string, categories []Category)
 │
 ├── dashboard.go         # Embedded HTML/CSS/JS for web UI
 │   └── dashboardHTML constant (1087 lines of embedded frontend)
@@ -514,14 +534,14 @@ transaction-tracker/
     Client receives confirmation and can display to user
 ```
 
-### 2. Dashboard Stats Flow (GET /stats)
+### 2. Dashboard Stats Flow (GET /dashboard)
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │ STEP 1: HTTP Request                                           │
 └────────────────────────────────────────────────────────────────┘
-    Browser loads dashboard or JavaScript calls loadStats()
-    GET /stats
+    Browser loads dashboard or JavaScript calls loadDashboard()
+    GET /dashboard
                     │
                     ▼
 ┌────────────────────────────────────────────────────────────────┐
@@ -538,7 +558,9 @@ transaction-tracker/
         SELECT COALESCE(SUM(amount), 0), COUNT(*)
         FROM transactions
         WHERE billing_cycle = 'Jan 2026'
-          AND category != 'Income/Transfer'
+          AND category NOT IN (
+              SELECT name FROM categories WHERE exclude_from_totals = 1
+          )
 
     Result: total = 450.50, count = 12
                     │
@@ -690,6 +712,18 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 ```
 
+### Table: categories
+
+```sql
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    emoji TEXT NOT NULL DEFAULT '',
+    exclude_from_totals INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+```
+
 ### Table: merchant_rules
 
 ```sql
@@ -708,6 +742,7 @@ CREATE TABLE IF NOT EXISTS merchant_rules (
 CREATE INDEX IF NOT EXISTS idx_billing_cycle ON transactions(billing_cycle);
 CREATE INDEX IF NOT EXISTS idx_transaction_date ON transactions(transaction_date);
 CREATE INDEX IF NOT EXISTS idx_category ON transactions(category);
+CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name);
 CREATE INDEX IF NOT EXISTS idx_rules_priority ON merchant_rules(priority DESC, id ASC);
 ```
 
@@ -727,21 +762,23 @@ CREATE INDEX IF NOT EXISTS idx_rules_priority ON merchant_rules(priority DESC, i
 
 ### Categories
 
-Fixed set of 11 categories:
+User-managed, stored in the `categories` table. 11 defaults are seeded on first boot. Add, rename, or delete from the Categories tab (Manage mode). Renaming cascades to all transactions and merchant rules atomically. Deleting is blocked if any transactions reference the category.
 
-| Category | Emoji | Use Cases |
-|----------|-------|-----------|
-| Groceries | 🛒 | Carrefour, Spinneys, Lulu, Co-op |
-| Dining Out | 🍔 | Restaurants, cafes, Talabat, Deliveroo |
-| Transport | 🚗 | Careem, Uber, Salik, fuel, parking |
-| Shopping | 🛍️ | Noon, Amazon, mall stores, clothes, electronics |
-| Subscriptions | 📱 | Netflix, Spotify, iCloud, ChatGPT, SaaS |
-| Bills & Utilities | 💳 | DEWA, Etisalat/du, rent, government fees |
-| Health | 💊 | Pharmacy, clinic, gym, lab tests |
-| Travel | ✈️ | Flights, hotels, holiday spending abroad |
-| Entertainment | 🎬 | Cinema, events, activities |
-| Cash Withdrawal | 💵 | ATM withdrawals |
-| Income/Transfer | 💰 | Salary, refunds, transfers (excluded from stats) |
+The `exclude_from_totals` flag controls spending total exclusion — replaces the old hardcoded `Income/Transfer` check.
+
+| Category | Emoji | Excluded from totals | Use Cases |
+|----------|-------|----------------------|-----------|
+| Groceries | 🛒 | No | Carrefour, Spinneys, Lulu, Co-op |
+| Dining Out | 🍔 | No | Restaurants, cafes, Talabat, Deliveroo |
+| Transport | 🚗 | No | Careem, Uber, Salik, fuel, parking |
+| Shopping | 🛍️ | No | Noon, Amazon, mall stores, clothes, electronics |
+| Subscriptions | 📱 | No | Netflix, Spotify, iCloud, ChatGPT, SaaS |
+| Bills & Utilities | 💳 | No | DEWA, Etisalat/du, rent, government fees |
+| Health | 💊 | No | Pharmacy, clinic, gym, lab tests |
+| Travel | ✈️ | No | Flights, hotels, holiday spending abroad |
+| Entertainment | 🎬 | No | Cinema, events, activities |
+| Cash Withdrawal | 💵 | No | ATM withdrawals |
+| Income/Transfer | 💰 | **Yes** | Salary, refunds, transfers |
 
 ### Unique Constraint Logic
 
@@ -767,7 +804,7 @@ UNIQUE(description, amount, transaction_date)
 SELECT COALESCE(SUM(amount), 0), COUNT(*)
 FROM transactions
 WHERE billing_cycle = ?
-  AND category != 'Income/Transfer'
+  AND category NOT IN (SELECT name FROM categories WHERE exclude_from_totals = 1)
 ```
 Uses: `idx_billing_cycle` index → O(log n) lookup
 
@@ -870,13 +907,13 @@ type TransactionRequest struct {
 
 ---
 
-### 2. GET /stats
+### 2. GET /dashboard
 
-**Description**: Get spending statistics for current billing cycle
+**Description**: Get spending statistics for current billing cycle plus all category definitions
 
 **Request**:
 ```http
-GET /stats HTTP/1.1
+GET /dashboard HTTP/1.1
 ```
 
 **Success Response** (200 OK):
@@ -913,7 +950,11 @@ GET /stats HTTP/1.1
         "description": "Starbucks Dubai Mall",
         "amount": 50.00,
         "date": "2026-01-25"
-    }
+    },
+    "categoryDefinitions": [
+        { "id": 1, "name": "Groceries", "emoji": "🛒", "excludeFromTotals": false, "createdAt": "..." },
+        { "id": 11, "name": "Income/Transfer", "emoji": "💰", "excludeFromTotals": true, "createdAt": "..." }
+    ]
 }
 ```
 
@@ -925,7 +966,8 @@ GET /stats HTTP/1.1
     "cycle": "Jan 2026",
     "total": 0,
     "count": 0,
-    "categories": []
+    "categories": [],
+    "categoryDefinitions": [ ... ]
 }
 ```
 
@@ -935,7 +977,7 @@ GET /stats HTTP/1.1
 
 **Behavior**:
 - Automatically calculates current billing cycle based on today's date
-- Excludes "Income/Transfer" category from totals
+- Excludes categories with `exclude_from_totals = 1` from spending totals
 - Categories sorted by total amount (descending)
 - Transactions within categories sorted by date (newest first)
 - Last transaction shows relative date ("today" vs "Jan 25")
@@ -1174,23 +1216,23 @@ let currentTransaction = null;  // Original transaction for edit
 
 #### 1. Data Loading
 ```javascript
-async function loadStats() {
-    // Fetch /stats endpoint
+async function loadDashboard() {
+    // Fetch /dashboard endpoint
     // Handle loading state
     // Handle errors
-    // Call renderStats() on success
+    // Populate stats, categories, allTransactions, categoryDefinitions, categoryOptions
 }
 ```
 
 **Flow**:
 ```
-loadStats()
+loadDashboard()
   ├─> Show loading spinner
-  ├─> fetch('/stats')
+  ├─> fetch('/dashboard')
   ├─> Check response.ok
   ├─> Parse JSON
-  ├─> Store in statsData & categoriesData
-  ├─> renderStats(data)
+  ├─> Store in stats, categories, allTransactions
+  ├─> Populate categoryDefinitions and categoryOptions from response
   └─> Update lastUpdate timestamp
 ```
 
@@ -1351,20 +1393,20 @@ Remove from DOM
 **Auto-load on Page Load**:
 ```javascript
 window.addEventListener('DOMContentLoaded', () => {
-    loadStats();
+    loadDashboard();
 });
 ```
 
 **Auto-refresh**:
 ```javascript
 setInterval(() => {
-    loadStats();
+    loadDashboard();
 }, 30000); // Every 30 seconds
 ```
 
 **Manual Refresh**:
 ```javascript
-<button class="refresh-btn" onclick="loadStats()">Refresh</button>
+<button class="refresh-btn" @click="loadDashboard()">Refresh</button>
 ```
 
 **Modal Close on Overlay Click**:
@@ -1492,7 +1534,7 @@ SAR → × 0.98
 Others → AI determines approximate rate
 ```
 
-**Conversion Logic**: In AI layer (systemPrompt)
+**Conversion Logic**: In AI layer (`BuildSystemPrompt` — built dynamically from DB categories)
 
 **Example**:
 ```
@@ -2241,7 +2283,7 @@ type openAIRequest struct {
 reqBody := openAIRequest{
     Model: "gpt-4o-mini",
     Messages: []openAIMessage{
-        {Role: "system", Content: systemPrompt},
+        {Role: "system", Content: BuildSystemPrompt(categories)},
         {Role: "user", Content: userText},
     },
     Temperature: 0.3,  // Low = deterministic
@@ -2366,8 +2408,10 @@ Input: "2026-02-23" → Output: "Feb 2026"
 
 **Signature**:
 ```go
-func (c *OpenAIClient) ParseTransactions(text string) ([]Transaction, error)
+func (c *OpenAIClient) ParseTransactions(text string, categories []Category) ([]Transaction, error)
 ```
+
+The category list is fetched from the DB by the caller (`transactionHandler`) on each request and passed in. The system prompt is built dynamically via `BuildSystemPrompt(categories)` — no hardcoded category names in the code.
 
 **Flow**:
 ```go
@@ -2420,12 +2464,14 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error)
 // 1. Calculate current cycle
 currentCycle := calculateBillingCycle(time.Now().Format("2006-01-02"))
 
-// 2. Get totals
+// 2. Get totals (excludes categories with exclude_from_totals = 1)
 QueryRow(`
     SELECT COALESCE(SUM(amount), 0), COUNT(*)
     FROM transactions
     WHERE billing_cycle = ?
-      AND category != 'Income/Transfer'
+      AND category NOT IN (
+          SELECT name FROM categories WHERE exclude_from_totals = 1
+      )
 `, currentCycle)
 
 // 3. Get category breakdown
@@ -2713,7 +2759,35 @@ function updateCategoriesInDOM() {
 
 ## Recent Changes
 
-### Merchant Rules Engine & Category Overhaul (Latest Update)
+### Dynamic Categories (Latest Update)
+
+**What Changed**:
+1. Added `categories` DB table — stores name, emoji, `exclude_from_totals` flag, seeded with 11 UAE defaults on first boot
+2. Categories are now fully user-manageable CRUD from the Categories tab (Manage mode toggle)
+3. Renaming a category cascades atomically to all transactions and merchant rules
+4. Deleting a category is blocked (HTTP 409) if any transactions reference it
+5. `exclude_from_totals` flag replaces the hardcoded `category != 'Income/Transfer'` SQL check everywhere
+6. OpenAI system prompt is now dynamic — built from the DB categories list on every parse request (`BuildSystemPrompt(categories []Category)`)
+7. `ParseTransactions` signature updated to accept `[]Category` parameter
+8. `/stats` endpoint renamed to `/dashboard`; response now includes `categoryDefinitions` array
+9. Frontend `getCategoryEmoji()` replaced with an app method that looks up from `categoryDefinitions`
+10. `categoryOptions` in the frontend is now populated from the API response instead of hardcoded
+
+**New Backend**:
+- `Category` struct, `GetAllCategories()`, `CreateCategory()`, `UpdateCategory()`, `DeleteCategory()`
+- `BuildSystemPrompt(categories []Category)` in openai.go
+- `categoriesHandler()`, `categoryDetailHandler()` in main.go
+- `GET /categories`, `POST /categories`, `PUT /categories/:id`, `DELETE /categories/:id`
+
+**New Frontend**:
+- Categories tab Manage mode toggle (spending view ↔ management list)
+- Category Add / Edit / Delete modals (same bottom-sheet pattern as Rules)
+- Categories FAB (visible only in Manage mode)
+- `isExcluded(categoryName)` helper consults `categoryDefinitions` for optimistic total updates
+
+---
+
+### Merchant Rules Engine & Category Overhaul
 
 **What Changed**:
 1. Replaced 10 old categories with 11 new UAE-specific ones (removed "Unknown", split food into Groceries/Dining Out, added Subscriptions, renamed Health & Fitness → Health)
@@ -2954,9 +3028,9 @@ curl -X POST http://localhost:8080/transaction \
   }'
 ```
 
-**Get Stats**:
+**Get Dashboard**:
 ```bash
-curl http://localhost:8080/stats | jq
+curl http://localhost:8080/dashboard | jq
 ```
 
 **Update Transaction**:

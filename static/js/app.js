@@ -1,7 +1,6 @@
 import {
   formatCurrency,
   formatDateTime,
-  getCategoryEmoji,
   escapeHtml,
   hapticFeedback,
   dateToInputValue,
@@ -9,14 +8,13 @@ import {
   nowLocalInput,
 } from './utils.js';
 
-import { fetchStats, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority } from './api.js';
+import { fetchDashboard, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority, createCategory, updateCategory, deleteCategory } from './api.js';
 import { computeTodaySpend, computeBiggestExpense, computeDailyAverage, computeTopCategory } from './tabs/dashboard.js';
 import { computeSearchedAndSorted, computeGroupedByDate } from './tabs/transactions.js';
 
 // Expose to Alpine templates
 window.formatCurrency = formatCurrency;
 window.formatDateTime = formatDateTime;
-window.getCategoryEmoji = getCategoryEmoji;
 window.escapeHtml = escapeHtml;
 
 export default function app() {
@@ -102,35 +100,45 @@ export default function app() {
     isRefreshing: false,
 
     // Category options
-    categoryOptions: [
-      'Groceries',
-      'Dining Out',
-      'Transport',
-      'Shopping',
-      'Subscriptions',
-      'Bills & Utilities',
-      'Health',
-      'Travel',
-      'Entertainment',
-      'Cash Withdrawal',
-      'Income/Transfer',
-    ],
+    categoryOptions: [],
+
+    // Category definitions
+    categoryDefinitions: [],
+
+    // Categories manage mode
+    categoriesManageMode: false,
+
+    // Category add modal
+    catAddOpen: false,
+    catAddForm: { name: '', emoji: '', excludeFromTotals: false },
+
+    // Category edit modal
+    catEditOpen: false,
+    catEditId: null,
+    catEditForm: { name: '', emoji: '', excludeFromTotals: false },
+
+    // Category delete modal
+    catDeleteOpen: false,
+    catDeleteId: null,
+    catDeleteName: '',
 
     async init() {
       this.canAutoClipboard = /Android.*Chrome\//.test(navigator.userAgent)
         && !!navigator.clipboard?.readText;
-      await this.loadStats();
+      await this.loadDashboard();
       this.initPullToRefresh();
     },
 
-    async loadStats() {
+    async loadDashboard() {
       this.loading = true;
       this.error = null;
       try {
-        const data = await fetchStats();
+        const data = await fetchDashboard();
         this.stats = data;
         this.categories = data.categories || [];
         this.allTransactions = data.allTransactions || [];
+        this.categoryDefinitions = data.categoryDefinitions || [];
+        this.categoryOptions = this.categoryDefinitions.map(c => c.name);
         this.lastUpdate = new Date().toLocaleTimeString();
       } catch (e) {
         this.error = e.message;
@@ -189,6 +197,16 @@ export default function app() {
       hapticFeedback('light');
     },
 
+    getCategoryEmoji(categoryName) {
+      const cat = this.categoryDefinitions.find(c => c.name === categoryName);
+      return (cat && cat.emoji) ? cat.emoji : '📌';
+    },
+
+    isExcluded(categoryName) {
+      const cat = this.categoryDefinitions.find(c => c.name === categoryName);
+      return cat ? cat.excludeFromTotals : false;
+    },
+
     toggleExpandTx(id) {
       this.expandedTxId = this.expandedTxId === id ? null : id;
     },
@@ -200,6 +218,86 @@ export default function app() {
 
     isCategoryExpanded(index) {
       return !!this.expandedCategories[index];
+    },
+
+    // --- Categories management ---
+
+    openCatAdd() {
+      this.catAddForm = { name: '', emoji: '', excludeFromTotals: false };
+      this.catAddOpen = true;
+    },
+
+    closeCatAdd() {
+      this.catAddOpen = false;
+    },
+
+    async saveCatAdd() {
+      if (!this.catAddForm.name.trim()) return;
+      try {
+        await createCategory({
+          name: this.catAddForm.name.trim(),
+          emoji: this.catAddForm.emoji.trim(),
+          excludeFromTotals: this.catAddForm.excludeFromTotals,
+        });
+        this.catAddOpen = false;
+        await this.loadDashboard();
+        this.showToast('Category added');
+      } catch (e) {
+        this.showToast('Failed to add category: ' + e.message);
+      }
+    },
+
+    openCatEdit(cat) {
+      this.catEditId = cat.id;
+      this.catEditForm = { name: cat.name, emoji: cat.emoji, excludeFromTotals: cat.excludeFromTotals };
+      this.catEditOpen = true;
+    },
+
+    closeCatEdit() {
+      this.catEditOpen = false;
+    },
+
+    async saveCatEdit() {
+      if (!this.catEditForm.name.trim()) return;
+      try {
+        await updateCategory(this.catEditId, {
+          name: this.catEditForm.name.trim(),
+          emoji: this.catEditForm.emoji.trim(),
+          excludeFromTotals: this.catEditForm.excludeFromTotals,
+        });
+        this.catEditOpen = false;
+        await this.loadDashboard();
+        this.showToast('Category updated');
+      } catch (e) {
+        this.showToast('Failed to update category: ' + e.message);
+      }
+    },
+
+    openCatDelete(cat) {
+      this.catDeleteId = cat.id;
+      this.catDeleteName = cat.name;
+      this.catDeleteOpen = true;
+    },
+
+    closeCatDelete() {
+      this.catDeleteOpen = false;
+    },
+
+    async confirmCatDelete() {
+      const { status, data } = await deleteCategory(this.catDeleteId);
+      if (status === 409) {
+        this.catDeleteOpen = false;
+        this.showToast(data.message || 'Cannot delete: category is in use');
+        return;
+      }
+      if (!data.success) {
+        this.catDeleteOpen = false;
+        this.showToast('Failed to delete category');
+        return;
+      }
+      this.catDeleteOpen = false;
+      await this.loadDashboard();
+      this.showToast('Category deleted');
     },
 
     // Edit modal
@@ -280,7 +378,7 @@ export default function app() {
           if (!dest) {
             dest = {
               category: newCat,
-              emoji: getCategoryEmoji(newCat),
+              emoji: this.getCategoryEmoji(newCat),
               total: 0,
               count: 0,
               transactions: [],
@@ -303,7 +401,7 @@ export default function app() {
         break;
       }
 
-      if (oldTx.category !== 'Income/Transfer') {
+      if (!this.isExcluded(oldTx.category)) {
         this.stats.total = this.stats.total - oldTx.amount + newTx.amount;
       }
 
@@ -353,7 +451,7 @@ export default function app() {
         cat.total -= deleted.amount;
         cat.count--;
 
-        if (deleted.category !== 'Income/Transfer') {
+        if (!this.isExcluded(deleted.category)) {
           this.stats.total -= deleted.amount;
         }
         this.stats.count--;
@@ -491,7 +589,7 @@ export default function app() {
         this.closeApplyAll();
         hapticFeedback('success');
         this.showToast('Updated ' + result.updated + ' transactions (' + result.protected + ' protected)');
-        await this.loadStats();
+        await this.loadDashboard();
       } catch (e) {
         this.showToast('Error: ' + e.message);
       } finally {
@@ -534,7 +632,7 @@ export default function app() {
         this.closeEdit();
         hapticFeedback('success');
         this.showToast('Updated ' + result.updated + ' transactions (' + result.protected + ' protected)');
-        await this.loadStats();
+        await this.loadDashboard();
       } catch (e) {
         this.showToast('Error: ' + e.message);
       }
@@ -594,7 +692,7 @@ export default function app() {
       if (!cat) {
         cat = {
           category: tx.category,
-          emoji: getCategoryEmoji(tx.category),
+          emoji: this.getCategoryEmoji(tx.category),
           total: 0,
           count: 0,
           transactions: [],
@@ -605,7 +703,7 @@ export default function app() {
       cat.total += tx.amount;
       cat.count++;
 
-      if (tx.category !== 'Income/Transfer') {
+      if (!this.isExcluded(tx.category)) {
         this.stats.total += tx.amount;
       }
       this.stats.count++;
@@ -640,7 +738,7 @@ export default function app() {
         const result = await parseTransaction(text.trim());
         this.pasteOpen = false;
         this.pasteText = '';
-        await this.loadStats();
+        await this.loadDashboard();
         const count = result.transactions?.length || 1;
         hapticFeedback('success');
         this.showToast('Added ' + count + ' transaction' + (count !== 1 ? 's' : ''));
@@ -701,7 +799,7 @@ export default function app() {
         if (dist > 80) {
           this.isRefreshing = true;
           if (navigator.vibrate) navigator.vibrate(50);
-          await this.loadStats();
+          await this.loadDashboard();
           setTimeout(() => {
             this.isRefreshing = false;
           }, 500);
@@ -766,6 +864,9 @@ export default function app() {
             this.ruleEditOpen = false;
             this.ruleDeleteOpen = false;
             this.applyAllOpen = false;
+            this.catAddOpen = false;
+            this.catEditOpen = false;
+            this.catDeleteOpen = false;
             el.style.transform = 'translateY(0)';
           }, 300);
         } else {

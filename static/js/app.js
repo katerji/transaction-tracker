@@ -9,7 +9,7 @@ import {
   nowLocalInput,
 } from './utils.js';
 
-import { fetchStats, createTransaction, updateTransaction, removeTransaction, parseTransaction } from './api.js';
+import { fetchStats, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority } from './api.js';
 import { computeTodaySpend, computeBiggestExpense, computeDailyAverage, computeTopCategory } from './tabs/dashboard.js';
 import { computeSearchedAndSorted, computeGroupedByDate } from './tabs/transactions.js';
 
@@ -45,7 +45,7 @@ export default function app() {
     editOpen: false,
     editId: null,
     editOld: null,
-    editForm: { description: '', amount: 0, date: '', category: 'Food & Dining' },
+    editForm: { description: '', amount: 0, date: '', category: 'Groceries' },
 
     // Delete modal
     deleteOpen: false,
@@ -54,13 +54,42 @@ export default function app() {
 
     // Add modal
     addOpen: false,
-    addForm: { description: '', amount: '', date: '', category: 'Food & Dining' },
+    addForm: { description: '', amount: '', date: '', category: 'Groceries' },
 
     // Paste SMS
     canAutoClipboard: false,
     pasteOpen: false,
     pasteText: '',
     pasteLoading: false,
+
+    // Rules tab
+    rulesLoading: false,
+    rules: [],
+
+    // Edit modal multi-step
+    editStep: 'edit', // 'edit' | 'confirm_rule' | 'confirm_retroactive'
+    editRuleKeyword: '',
+    editRuleMatchCount: 0,
+    editRuleProtectedCount: 0,
+    editRuleSavedId: null,
+
+    // Rule add modal
+    ruleAddOpen: false,
+    ruleAddForm: { keyword: '', category: 'Groceries', priority: 0 },
+
+    // Rule edit modal
+    ruleEditOpen: false,
+    ruleEditId: null,
+    ruleEditForm: { keyword: '', category: 'Groceries', priority: 0 },
+
+    // Rule delete confirm
+    ruleDeleteOpen: false,
+    ruleDeleteId: null,
+    ruleDeleteKeyword: '',
+
+    // Apply-all confirm modal
+    applyAllOpen: false,
+    applyAllLoading: false,
 
     // Toast
     toastMessage: '',
@@ -74,16 +103,17 @@ export default function app() {
 
     // Category options
     categoryOptions: [
-      'Food & Dining',
+      'Groceries',
+      'Dining Out',
       'Transport',
       'Shopping',
+      'Subscriptions',
       'Bills & Utilities',
-      'Entertainment',
-      'Health & Fitness',
+      'Health',
       'Travel',
+      'Entertainment',
       'Cash Withdrawal',
       'Income/Transfer',
-      'Unknown',
     ],
 
     async init() {
@@ -114,6 +144,9 @@ export default function app() {
       if (tab === 'add') {
         this.openAdd();
         return;
+      }
+      if (tab === 'rules') {
+        this.loadRules();
       }
       this.currentTab = tab;
       hapticFeedback('light');
@@ -180,12 +213,20 @@ export default function app() {
         category: tx.category,
       };
       this.editOpen = true;
+      this.editStep = 'edit';
+      this.editRuleKeyword = '';
+      this.editRuleMatchCount = 0;
+      this.editRuleProtectedCount = 0;
+      this.editRuleSavedId = null;
     },
 
     closeEdit() {
       this.editOpen = false;
       this.editId = null;
       this.editOld = null;
+      this.editStep = 'edit';
+      this.editRuleKeyword = '';
+      this.editRuleSavedId = null;
     },
 
     async saveEdit() {
@@ -200,10 +241,18 @@ export default function app() {
         await updateTransaction(this.editId, payload);
         const txId = this.editId;
         const oldTx = this.editOld;
-        this.closeEdit();
         this.applyUpdate(txId, oldTx, payload);
         hapticFeedback('success');
-        this.showToast('Transaction updated successfully');
+        this.showToast('Transaction updated');
+
+        const categoryChanged = oldTx.category !== payload.category;
+        if (categoryChanged) {
+          // Suggest keyword: first meaningful word of description (lowercase)
+          this.editRuleKeyword = payload.description.trim().split(/\s+/)[0].toLowerCase();
+          this.editStep = 'confirm_rule';
+        } else {
+          this.closeEdit();
+        }
       } catch (e) {
         this.showToast('Error: ' + e.message);
       }
@@ -319,13 +368,185 @@ export default function app() {
       this.categories.sort((a, b) => b.total - a.total);
     },
 
+    // Rules tab
+    async loadRules() {
+      this.rulesLoading = true;
+      try {
+        const data = await fetchRules();
+        this.rules = data.rules || [];
+      } catch (e) {
+        this.showToast('Error loading rules: ' + e.message);
+      } finally {
+        this.rulesLoading = false;
+      }
+    },
+
+    // Rule add modal
+    openRuleAdd() {
+      this.ruleAddForm = { keyword: '', category: 'Groceries', priority: 0 };
+      this.ruleAddOpen = true;
+      hapticFeedback('light');
+    },
+
+    closeRuleAdd() {
+      this.ruleAddOpen = false;
+    },
+
+    async saveRuleAdd() {
+      const keyword = this.ruleAddForm.keyword.trim();
+      if (!keyword) return this.showToast('Keyword is required');
+      try {
+        const result = await createRule({
+          keyword,
+          category: this.ruleAddForm.category,
+          priority: parseInt(this.ruleAddForm.priority) || 0,
+        });
+        this.rules.unshift(result.rule);
+        this.closeRuleAdd();
+        hapticFeedback('success');
+        this.showToast('Rule created');
+        await this.loadRules();
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+    },
+
+    // Rule edit modal
+    openRuleEdit(rule) {
+      this.ruleEditId = rule.id;
+      this.ruleEditForm = { keyword: rule.keyword, category: rule.category, priority: rule.priority };
+      this.ruleEditOpen = true;
+      hapticFeedback('light');
+    },
+
+    closeRuleEdit() {
+      this.ruleEditOpen = false;
+      this.ruleEditId = null;
+    },
+
+    async saveRuleEdit() {
+      if (!this.ruleEditId) return;
+      try {
+        await updateRule(this.ruleEditId, this.ruleEditForm);
+        this.closeRuleEdit();
+        hapticFeedback('success');
+        this.showToast('Rule updated');
+        await this.loadRules();
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+    },
+
+    // Rule delete
+    openRuleDelete(rule) {
+      this.ruleDeleteId = rule.id;
+      this.ruleDeleteKeyword = rule.keyword;
+      this.ruleDeleteOpen = true;
+      hapticFeedback('medium');
+    },
+
+    closeRuleDelete() {
+      this.ruleDeleteOpen = false;
+      this.ruleDeleteId = null;
+    },
+
+    async confirmRuleDelete() {
+      if (!this.ruleDeleteId) return;
+      try {
+        await deleteRule(this.ruleDeleteId);
+        this.closeRuleDelete();
+        hapticFeedback('success');
+        this.showToast('Rule deleted');
+        await this.loadRules();
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+    },
+
+    // Priority move
+    async moveRule(id, direction) {
+      try {
+        await moveRulePriority(id, direction);
+        await this.loadRules();
+        hapticFeedback('light');
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+    },
+
+    // Apply-all modal
+    openApplyAll() {
+      this.applyAllOpen = true;
+      hapticFeedback('medium');
+    },
+
+    closeApplyAll() {
+      this.applyAllOpen = false;
+    },
+
+    async confirmApplyAll() {
+      this.applyAllLoading = true;
+      try {
+        const result = await applyAllRules();
+        this.closeApplyAll();
+        hapticFeedback('success');
+        this.showToast('Updated ' + result.updated + ' transactions (' + result.protected + ' protected)');
+        await this.loadStats();
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      } finally {
+        this.applyAllLoading = false;
+      }
+    },
+
+    // Edit modal steps
+    skipRuleStep() {
+      this.closeEdit();
+    },
+
+    async saveEditRule() {
+      const keyword = this.editRuleKeyword.trim();
+      if (!keyword) return this.showToast('Keyword is required');
+      try {
+        const result = await createRule({
+          keyword,
+          category: this.editForm.category,
+          priority: 0,
+        });
+        this.editRuleSavedId = result.rule.id;
+        this.editRuleMatchCount = result.match_count;
+        this.editRuleProtectedCount = result.protected_count;
+        this.editStep = 'confirm_retroactive';
+        hapticFeedback('light');
+      } catch (e) {
+        this.showToast('Error saving rule: ' + e.message);
+      }
+    },
+
+    skipRetroactive() {
+      this.closeEdit();
+    },
+
+    async applyRetroactive() {
+      if (!this.editRuleSavedId) return;
+      try {
+        const result = await applyRuleSingle(this.editRuleSavedId);
+        this.closeEdit();
+        hapticFeedback('success');
+        this.showToast('Updated ' + result.updated + ' transactions (' + result.protected + ' protected)');
+        await this.loadStats();
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+    },
+
     // Add modal
     openAdd() {
       this.addForm = {
         description: '',
         amount: '',
         date: nowLocalInput(),
-        category: 'Food & Dining',
+        category: 'Groceries',
       };
       this.addOpen = true;
       hapticFeedback('light');
@@ -541,6 +762,10 @@ export default function app() {
             this.deleteOpen = false;
             this.addOpen = false;
             this.pasteOpen = false;
+            this.ruleAddOpen = false;
+            this.ruleEditOpen = false;
+            this.ruleDeleteOpen = false;
+            this.applyAllOpen = false;
             el.style.transform = 'translateY(0)';
           }, 300);
         } else {

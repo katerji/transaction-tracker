@@ -7,7 +7,7 @@
 4. [Project Structure](#project-structure)
 5. [Data Flow](#data-flow)
 6. [Database Schema](#database-schema)
-7. [API Endp/cosoints](#api-endpoints)
+7. [API Endpoints](#api-endpoints)
 8. [Frontend Architecture](#frontend-architecture)
 9. [Key Features](#key-features)
 10. [Configuration](#configuration)
@@ -32,10 +32,11 @@ Transaction Tracker is a lightweight, self-hosted expense tracking system that a
 ### Core Capabilities
 1. AI-powered transaction parsing from natural language text
 2. Automatic currency conversion to AED
-3. Smart categorization with confidence scoring
-4. Billing cycle-based analytics (23rd to 22nd of each month)
-5. Real-time web dashboard with edit/delete capabilities
-6. Zero external dependencies (no database server required)
+3. Merchant rules engine — keyword → category dictionary that overrides AI, with priority ordering and retroactive application
+4. Smart categorization with confidence scoring
+5. Billing cycle-based analytics (23rd to 22nd of each month)
+6. Real-time web dashboard with edit/delete capabilities
+7. Zero external dependencies (no database server required)
 
 ---
 
@@ -62,12 +63,22 @@ Transaction Tracker is a lightweight, self-hosted expense tracking system that a
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────┐    │
 │  │  Route Handlers (main.go)                              │    │
-│  │  • GET  /              → Dashboard UI                  │    │
-│  │  • POST /transaction    → Log new transaction          │    │
-│  │  • PUT  /transaction/:id → Update transaction          │    │
-│  │  • DELETE /transaction/:id → Delete transaction        │    │
-│  │  • GET  /stats          → Get billing cycle stats      │    │
-│  │  • GET  /health         → Health check                 │    │
+│  │  • GET  /                   → Dashboard UI             │    │
+│  │  • POST /transaction        → Parse SMS & save         │    │
+│  │  • POST /transaction/manual → Add manual transaction   │    │
+│  │  • PUT  /transaction/:id    → Update transaction       │    │
+│  │  • DELETE /transaction/:id  → Delete transaction       │    │
+│  │  • GET  /stats              → Billing cycle stats      │    │
+│  │  • GET  /export             → CSV export               │    │
+│  │  • POST /import             → CSV import               │    │
+│  │  • GET  /rules              → List merchant rules      │    │
+│  │  • POST /rules              → Create rule              │    │
+│  │  • PUT  /rules/:id          → Update rule              │    │
+│  │  • DELETE /rules/:id        → Delete rule              │    │
+│  │  • POST /rules/:id/apply    → Apply rule retroactively │    │
+│  │  • POST /rules/:id/move     → Reorder rule priority    │    │
+│  │  • POST /rules/apply-all    → Apply all rules          │    │
+│  │  • GET  /health             → Health check             │    │
 │  └────────────────────────────────────────────────────────┘    │
 │                                                                  │
 └────────────────────────────────────────────────────────────────┘
@@ -418,8 +429,19 @@ transaction-tracker/
             - date: "2026-01-25"
             - description: "Starbucks Dubai Mall"
             - amount: 50.0 (in AED)
-            - category: "Food & Dining"
+            - category: "Dining Out"
             - confidence: 95
+                    │
+                    ▼
+┌────────────────────────────────────────────────────────────────┐
+│ STEP 3b: Merchant Rule Matching (database.go)                 │
+└────────────────────────────────────────────────────────────────┘
+    DatabaseClient.FindMatchingRule(description)
+    • Queries merchant_rules ordered by priority DESC, id ASC
+    • Case-insensitive substring match against description
+    • First match wins
+    • If matched: override tx.Category, set tx.Source = "rule"
+    • If no match: keep OpenAI category, set tx.Source = "openai"
                     │
                     ▼
 ┌────────────────────────────────────────────────────────────────┐
@@ -450,8 +472,8 @@ transaction-tracker/
     SQL Query:
         INSERT INTO transactions
         (description, amount, transaction_date, category,
-         confidence, billing_cycle, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+         confidence, billing_cycle, created_at, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 
     Constraint Check:
         UNIQUE(description, amount, transaction_date)
@@ -663,7 +685,20 @@ CREATE TABLE IF NOT EXISTS transactions (
     confidence INTEGER,
     billing_cycle TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'openai',
     UNIQUE(description, amount, transaction_date)
+);
+```
+
+### Table: merchant_rules
+
+```sql
+CREATE TABLE IF NOT EXISTS merchant_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword TEXT NOT NULL,
+    category TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
 );
 ```
 
@@ -673,6 +708,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_billing_cycle ON transactions(billing_cycle);
 CREATE INDEX IF NOT EXISTS idx_transaction_date ON transactions(transaction_date);
 CREATE INDEX IF NOT EXISTS idx_category ON transactions(category);
+CREATE INDEX IF NOT EXISTS idx_rules_priority ON merchant_rules(priority DESC, id ASC);
 ```
 
 ### Field Descriptions
@@ -683,27 +719,29 @@ CREATE INDEX IF NOT EXISTS idx_category ON transactions(category);
 | `description` | TEXT | NO | Merchant or transaction description | "Starbucks Dubai Mall" |
 | `amount` | REAL | NO | Amount in AED (positive for expenses, negative for income) | 50.00 |
 | `transaction_date` | TEXT | NO | Date in YYYY-MM-DD format | "2026-01-25" |
-| `category` | TEXT | NO | Transaction category (one of 10 predefined) | "Food & Dining" |
+| `category` | TEXT | NO | Transaction category (one of 11 predefined) | "Dining Out" |
 | `confidence` | INTEGER | YES | AI confidence score (0-100) | 95 |
 | `billing_cycle` | TEXT | NO | Billing cycle in "Mon YYYY" format | "Jan 2026" |
 | `created_at` | TEXT | NO | Timestamp when record was created (RFC3339) | "2026-01-25T14:30:00Z" |
+| `source` | TEXT | NO | Categorization origin: `openai`, `rule`, or `manual` | "openai" |
 
 ### Categories
 
-Fixed set of 10 categories:
+Fixed set of 11 categories:
 
 | Category | Emoji | Use Cases |
 |----------|-------|-----------|
-| Food & Dining | 🍔 | Restaurants, cafes, food delivery |
-| Transport | 🚗 | Uber, Careem, gas, parking, car maintenance |
-| Shopping | 🛍️ | Retail, online shopping, clothing, electronics |
-| Bills & Utilities | 💳 | Electricity, water, internet, subscriptions |
-| Entertainment | 🎬 | Movies, concerts, streaming, gaming |
-| Health & Fitness | 💪 | Gym, medical, pharmacy, supplements |
-| Travel | ✈️ | Flights, hotels, travel bookings |
+| Groceries | 🛒 | Carrefour, Spinneys, Lulu, Co-op |
+| Dining Out | 🍔 | Restaurants, cafes, Talabat, Deliveroo |
+| Transport | 🚗 | Careem, Uber, Salik, fuel, parking |
+| Shopping | 🛍️ | Noon, Amazon, mall stores, clothes, electronics |
+| Subscriptions | 📱 | Netflix, Spotify, iCloud, ChatGPT, SaaS |
+| Bills & Utilities | 💳 | DEWA, Etisalat/du, rent, government fees |
+| Health | 💊 | Pharmacy, clinic, gym, lab tests |
+| Travel | ✈️ | Flights, hotels, holiday spending abroad |
+| Entertainment | 🎬 | Cinema, events, activities |
 | Cash Withdrawal | 💵 | ATM withdrawals |
 | Income/Transfer | 💰 | Salary, refunds, transfers (excluded from stats) |
-| Unknown | ❓ | Low confidence transactions (< 70%) |
 
 ### Unique Constraint Logic
 
@@ -1511,32 +1549,36 @@ Feb 23, 2026 → "Feb 2026" (new cycle)
 
 ### 4. Smart Categorization
 
-**Categories with Confidence**:
+**Two-layer system**:
 
+**Layer 1 — Merchant rules engine** (runs after OpenAI parse):
+- `merchant_rules` table: keyword → category mappings, ordered by `priority DESC`
+- Case-insensitive substring match against the parsed description
+- First match wins, sets `source = "rule"` and overrides OpenAI's category
+- 36 UAE merchants pre-seeded (Carrefour, Talabat, DEWA, Careem, Noon, etc.)
+- User can add/edit/delete rules from the Rules tab in the dashboard
+
+**Layer 2 — OpenAI GPT-4o-mini** (fallback for unknown merchants):
 ```json
 {
-    "category": "Food & Dining",
+    "category": "Dining Out",
     "confidence": 95
 }
 ```
 
 **AI Decision Tree**:
 1. Exact merchant match → High confidence (90-100%)
-   - "Starbucks" → Food & Dining (98%)
+   - "Starbucks" → Dining Out (98%)
    - "Careem" → Transport (99%)
 
 2. Keyword match → Medium confidence (70-89%)
-   - "restaurant" → Food & Dining (85%)
+   - "restaurant" → Dining Out (85%)
    - "taxi" → Transport (80%)
 
 3. Ambiguous → Low confidence (< 70%)
-   - "Amazon" → Shopping (65%) or Unknown
-   - "Payment" → Unknown (50%)
+   - Pick closest category — no "Unknown" fallback
 
-**Handling Unknown**:
-- Prompt rule: "Only use Unknown if confidence < 70"
-- UI: Shows with ❓ emoji
-- User can manually edit via dashboard
+**Auto-learning**: Editing a transaction's category in the UI prompts you to save a keyword rule, then optionally apply it retroactively to existing transactions. Transactions with `source = "manual"` are always protected from retroactive updates.
 
 ---
 
@@ -2671,7 +2713,33 @@ function updateCategoriesInDOM() {
 
 ## Recent Changes
 
-### Edit/Delete Feature (Latest Update)
+### Merchant Rules Engine & Category Overhaul (Latest Update)
+
+**What Changed**:
+1. Replaced 10 old categories with 11 new UAE-specific ones (removed "Unknown", split food into Groceries/Dining Out, added Subscriptions, renamed Health & Fitness → Health)
+2. Added `merchant_rules` DB table — keyword → category mappings with priority ordering
+3. Added `source` column to `transactions` (`openai` / `rule` / `manual`)
+4. Rule matching runs after OpenAI parse — overrides category for known merchants
+5. 36 UAE merchants pre-seeded (Carrefour, Talabat, DEWA, Careem, Noon, etc.)
+6. Auto-learn: editing a category triggers a "save as rule?" prompt with retroactive application
+7. New **Rules tab** in dashboard — add/edit/delete/reorder rules, bulk re-apply
+8. Edit modal now has 3-step inline flow when category changes: edit → confirm rule → confirm retroactive
+
+**New Backend**:
+- `FindMatchingRule()` — post-OpenAI rule lookup
+- `CreateRule()`, `GetAllRules()`, `UpdateRule()`, `DeleteRule()` — CRUD
+- `ApplyRuleSingle()`, `ApplyAllRules()` — retroactive application (skips `source='manual'`)
+- `MoveRulePriority()` — up/down reordering
+- 7 new API endpoints under `/rules`
+
+**New Frontend**:
+- Rules tab (4th nav item) with rules list, FAB for adding, sticky "Re-apply All" footer
+- Edit modal multi-step flow with keyword confirmation
+- Source badge in edit modal ("Categorized by: AI / Rule / You")
+
+---
+
+### Edit/Delete Feature
 
 **What Changed**:
 1. Added PUT and DELETE endpoints
@@ -3069,13 +3137,14 @@ This document provides a complete technical overview of the Transaction Tracker 
 3. **Key Features**:
    - Multi-transaction parsing
    - Currency conversion
-   - Smart categorization
+   - Merchant rules engine (keyword → category, priority-ordered, retroactive)
+   - Smart AI categorization with 11 UAE-specific categories
    - Billing cycle tracking
-   - Real-time dashboard
+   - Real-time dashboard with 4 tabs (Dashboard, Transactions, Categories, Rules)
    - Edit/delete with DOM updates
-4. **Tech Stack**: Go stdlib + SQLite + OpenAI GPT-4o-mini + Vanilla JS
+4. **Tech Stack**: Go stdlib + SQLite + OpenAI GPT-4o-mini + Alpine.js + Tailwind CSS
 5. **Deployment**: Docker + Fly.io (free tier)
-6. **Recent Updates**: Full CRUD operations, toast notifications, instant UI updates
+6. **Recent Updates**: Merchant rules engine, category overhaul, Rules tab, 3-step edit modal
 
 **For LLMs**: This document provides all context needed to:
 - Understand the entire system architecture

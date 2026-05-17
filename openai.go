@@ -22,6 +22,7 @@ type Transaction struct {
 	Confidence   int     `json:"confidence"`
 	Timestamp    string  `json:"timestamp,omitempty"`
 	BillingCycle string  `json:"billingCycle,omitempty"`
+	Source       string  `json:"source,omitempty"`
 }
 
 type openAIRequest struct {
@@ -52,7 +53,7 @@ Each transaction object must have these exact fields:
 - date: transaction datetime in YYYY-MM-DD HH:MM:SS format (use 00:00:00 if time not available, infer current year if missing)
 - description: merchant or transaction description
 - amount: numeric value CONVERTED TO AED as a number (positive for expenses, negative for income/deposits)
-- category: exactly ONE of these categories: "Food & Dining", "Transport", "Shopping", "Bills & Utilities", "Entertainment", "Health & Fitness", "Travel", "Cash Withdrawal", "Income/Transfer", "Unknown"
+- category: exactly ONE of these categories: "Groceries", "Dining Out", "Transport", "Shopping", "Subscriptions", "Bills & Utilities", "Health", "Travel", "Entertainment", "Cash Withdrawal", "Income/Transfer"
 - confidence: number from 0-100
 
 Currency Conversion Rules:
@@ -66,7 +67,7 @@ Currency Conversion Rules:
 
 Parsing Rules:
 - Return an ARRAY of transaction objects, even if there's only one transaction
-- Only use "Unknown" category if confidence < 70
+- If confidence < 70, pick the closest matching category rather than leaving it uncategorized
 - Infer current year if not specified in SMS
 - Extract numeric amount only, remove currency symbols
 - Be conservative with category assignment
@@ -87,7 +88,7 @@ Example response for multiple transactions:
     "date": "2026-01-25 14:30:00",
     "description": "Starbucks Dubai Mall",
     "amount": 25.50,
-    "category": "Food & Dining",
+    "category": "Dining Out",
     "confidence": 95
   },
   {

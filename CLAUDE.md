@@ -16,12 +16,30 @@ go run *.go             # starts on :8080
 - Go stdlib HTTP server (no router library)
 - SQLite via go-sqlite3 (no ORM, raw SQL)
 - OpenAI gpt-4o-mini for parsing SMS text into transactions
-- Dashboard is a single HTML file embedded via `//go:embed`
-- Frontend is vanilla JS + CSS, no frameworks
+- Merchant rules engine overrides OpenAI categories for known merchants — DB-backed (`merchant_rules` table), priority-ordered, case-insensitive substring matching
+- Dashboard served from `static/` (embedded via `//go:embed`)
+- Frontend is vanilla JS + Alpine.js + Tailwind CSS
 
 ## Conventions
 - All monetary amounts are in AED — currency conversion happens in the OpenAI prompt
 - Billing cycle runs from the 23rd to the 22nd of each month
-- Income/Transfer category is excluded from spending totals
+- `Income/Transfer` category is excluded from spending totals
 - Transactions are deduplicated by (description, amount, transaction_date)
 - Manual entries always have confidence=100
+- Transaction `source` tracks categorization origin: `"openai"` (AI-assigned), `"rule"` (matched a merchant rule), `"manual"` (user edited) — retroactive rule application skips `"manual"` transactions
+
+## Categories (11 total)
+
+| Category | Emoji |
+|---|---|
+| Groceries | 🛒 |
+| Dining Out | 🍔 |
+| Transport | 🚗 |
+| Shopping | 🛍️ |
+| Subscriptions | 📱 |
+| Bills & Utilities | 💳 |
+| Health | 💊 |
+| Travel | ✈️ |
+| Entertainment | 🎬 |
+| Cash Withdrawal | 💵 |
+| Income/Transfer | 💰 |

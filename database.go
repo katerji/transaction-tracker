@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -12,6 +13,14 @@ import (
 
 type DatabaseClient struct {
 	db *sql.DB
+}
+
+type MerchantRule struct {
+	ID        int64  `json:"id"`
+	Keyword   string `json:"keyword"`
+	Category  string `json:"category"`
+	Priority  int    `json:"priority"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func NewDatabaseClient(dbPath string) (*DatabaseClient, error) {
@@ -70,14 +79,47 @@ func (c *DatabaseClient) runMigrations() error {
 		}
 	}
 
+	if err := c.addColumnIfNotExists("transactions", "source TEXT NOT NULL DEFAULT 'openai'"); err != nil {
+		return fmt.Errorf("failed to add source column: %w", err)
+	}
+
+	merchantRulesMigrations := []string{
+		`CREATE TABLE IF NOT EXISTS merchant_rules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			keyword TEXT NOT NULL,
+			category TEXT NOT NULL,
+			priority INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rules_priority ON merchant_rules(priority DESC, id ASC)`,
+	}
+
+	for _, migration := range merchantRulesMigrations {
+		if _, err := c.db.Exec(migration); err != nil {
+			return fmt.Errorf("merchant rules migration failed: %w", err)
+		}
+	}
+
+	if err := c.seedMerchantRules(); err != nil {
+		return fmt.Errorf("failed to seed merchant rules: %w", err)
+	}
+
+	return nil
+}
+
+func (c *DatabaseClient) addColumnIfNotExists(table, colDef string) error {
+	_, err := c.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", table, colDef))
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return err
+	}
 	return nil
 }
 
 func (c *DatabaseClient) SaveTransaction(tx Transaction) (int64, error) {
 	query := `
 		INSERT INTO transactions
-		(description, amount, transaction_date, category, confidence, billing_cycle, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		(description, amount, transaction_date, category, confidence, billing_cycle, created_at, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	log.Printf("[Database] Saving transaction: %s (%.2f AED)", tx.Description, tx.Amount)
@@ -91,6 +133,7 @@ func (c *DatabaseClient) SaveTransaction(tx Transaction) (int64, error) {
 		tx.Confidence,
 		tx.BillingCycle,
 		tx.Timestamp,
+		tx.Source,
 	)
 
 	if err != nil {
@@ -311,7 +354,7 @@ func (c *DatabaseClient) GetAllTransactionsGroupedByCycle() ([]Transaction, erro
 func (c *DatabaseClient) UpdateTransaction(id int64, tx Transaction) error {
 	query := `
 		UPDATE transactions
-		SET description = ?, amount = ?, transaction_date = ?, category = ?, billing_cycle = ?
+		SET description = ?, amount = ?, transaction_date = ?, category = ?, billing_cycle = ?, source = ?
 		WHERE id = ?
 	`
 
@@ -324,6 +367,7 @@ func (c *DatabaseClient) UpdateTransaction(id int64, tx Transaction) error {
 		tx.Date,
 		tx.Category,
 		tx.BillingCycle,
+		"manual",
 		id,
 	)
 
@@ -359,6 +403,361 @@ func (c *DatabaseClient) DeleteTransaction(id int64) error {
 
 	log.Printf("[Database] Transaction deleted successfully")
 	return nil
+}
+
+func (c *DatabaseClient) seedMerchantRules() error {
+	var count int
+	err := c.db.QueryRow("SELECT COUNT(*) FROM merchant_rules").Scan(&count)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	rules := []struct {
+		keyword  string
+		category string
+	}{
+		{"carrefour", "Groceries"},
+		{"spinneys", "Groceries"},
+		{"lulu", "Groceries"},
+		{"union coop", "Groceries"},
+		{"talabat", "Dining Out"},
+		{"deliveroo", "Dining Out"},
+		{"zomato", "Dining Out"},
+		{"starbucks", "Dining Out"},
+		{"mcdonald", "Dining Out"},
+		{"kfc", "Dining Out"},
+		{"subway", "Dining Out"},
+		{"hardee", "Dining Out"},
+		{"pizza hut", "Dining Out"},
+		{"careem", "Transport"},
+		{"uber", "Transport"},
+		{"salik", "Transport"},
+		{"enoc", "Transport"},
+		{"adnoc", "Transport"},
+		{"emarat", "Transport"},
+		{"noon", "Shopping"},
+		{"amazon", "Shopping"},
+		{"netflix", "Subscriptions"},
+		{"spotify", "Subscriptions"},
+		{"icloud", "Subscriptions"},
+		{"chatgpt", "Subscriptions"},
+		{"openai", "Subscriptions"},
+		{"google one", "Subscriptions"},
+		{"apple", "Subscriptions"},
+		{"dewa", "Bills & Utilities"},
+		{"addc", "Bills & Utilities"},
+		{"etisalat", "Bills & Utilities"},
+		{"du telecom", "Bills & Utilities"},
+		{"aster", "Health"},
+		{"boots", "Health"},
+		{"medcare", "Health"},
+		{"life pharmacy", "Health"},
+	}
+
+	for i, rule := range rules {
+		priority := len(rules) - i
+		_, err := c.db.Exec(
+			"INSERT INTO merchant_rules (keyword, category, priority, created_at) VALUES (?, ?, ?, ?)",
+			rule.keyword,
+			rule.category,
+			priority,
+			time.Now().Format(time.RFC3339),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to seed rule %s: %w", rule.keyword, err)
+		}
+	}
+
+	return nil
+}
+
+func (c *DatabaseClient) CreateRule(keyword, category string, priority int) (*MerchantRule, int, int, error) {
+	result, err := c.db.Exec(
+		"INSERT INTO merchant_rules (keyword, category, priority, created_at) VALUES (?, ?, ?, ?)",
+		keyword,
+		category,
+		priority,
+		time.Now().Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("failed to create rule: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("failed to get last insert ID: %w", err)
+	}
+
+	matchCount, protectedCount, err := c.countRuleMatches(keyword)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	rule := &MerchantRule{
+		ID:        id,
+		Keyword:   keyword,
+		Category:  category,
+		Priority:  priority,
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	return rule, matchCount, protectedCount, nil
+}
+
+func (c *DatabaseClient) countRuleMatches(keyword string) (int, int, error) {
+	var matchCount int
+	err := c.db.QueryRow(
+		"SELECT COUNT(*) FROM transactions WHERE LOWER(description) LIKE '%' || LOWER(?) || '%' AND source != 'manual'",
+		keyword,
+	).Scan(&matchCount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to count rule matches: %w", err)
+	}
+
+	var protectedCount int
+	err = c.db.QueryRow(
+		"SELECT COUNT(*) FROM transactions WHERE LOWER(description) LIKE '%' || LOWER(?) || '%' AND source = 'manual'",
+		keyword,
+	).Scan(&protectedCount)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to count protected transactions: %w", err)
+	}
+
+	return matchCount, protectedCount, nil
+}
+
+func (c *DatabaseClient) GetAllRules() ([]MerchantRule, error) {
+	rows, err := c.db.Query("SELECT id, keyword, category, priority, created_at FROM merchant_rules ORDER BY priority DESC, id ASC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []MerchantRule
+	for rows.Next() {
+		var rule MerchantRule
+		if err := rows.Scan(&rule.ID, &rule.Keyword, &rule.Category, &rule.Priority, &rule.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan rule: %w", err)
+		}
+		rules = append(rules, rule)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rules: %w", err)
+	}
+
+	return rules, nil
+}
+
+func (c *DatabaseClient) UpdateRule(id int64, keyword, category string, priority int) error {
+	result, err := c.db.Exec(
+		"UPDATE merchant_rules SET keyword=?, category=?, priority=? WHERE id=?",
+		keyword,
+		category,
+		priority,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update rule: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("rule not found")
+	}
+
+	return nil
+}
+
+func (c *DatabaseClient) DeleteRule(id int64) error {
+	result, err := c.db.Exec("DELETE FROM merchant_rules WHERE id=?", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete rule: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("rule not found")
+	}
+
+	return nil
+}
+
+func (c *DatabaseClient) MoveRulePriority(id int64, direction string) error {
+	rules, err := c.GetAllRules()
+	if err != nil {
+		return err
+	}
+
+	var idx int
+	var found bool
+	for i, rule := range rules {
+		if rule.ID == id {
+			idx = i
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("rule not found")
+	}
+
+	var adjacentIdx int
+	if direction == "up" {
+		if idx == 0 {
+			return nil
+		}
+		adjacentIdx = idx - 1
+	} else if direction == "down" {
+		if idx == len(rules)-1 {
+			return nil
+		}
+		adjacentIdx = idx + 1
+	} else {
+		return fmt.Errorf("invalid direction: %s", direction)
+	}
+
+	rule := rules[idx]
+	adjacent := rules[adjacentIdx]
+
+	_, err = c.db.Exec("UPDATE merchant_rules SET priority=? WHERE id=?", adjacent.Priority, rule.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update rule priority: %w", err)
+	}
+
+	_, err = c.db.Exec("UPDATE merchant_rules SET priority=? WHERE id=?", rule.Priority, adjacent.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update adjacent rule priority: %w", err)
+	}
+
+	return nil
+}
+
+func (c *DatabaseClient) ApplyRuleSingle(ruleID int64) (int, int, error) {
+	var rule MerchantRule
+	err := c.db.QueryRow("SELECT id, keyword, category, priority, created_at FROM merchant_rules WHERE id=?", ruleID).Scan(
+		&rule.ID, &rule.Keyword, &rule.Category, &rule.Priority, &rule.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, 0, fmt.Errorf("rule not found")
+		}
+		return 0, 0, fmt.Errorf("failed to fetch rule: %w", err)
+	}
+
+	result, err := c.db.Exec(
+		"UPDATE transactions SET category=?, source='rule' WHERE LOWER(description) LIKE '%' || LOWER(?) || '%' AND source != 'manual'",
+		rule.Category,
+		rule.Keyword,
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to apply rule: %w", err)
+	}
+
+	updated, _ := result.RowsAffected()
+
+	var protected int
+	err = c.db.QueryRow(
+		"SELECT COUNT(*) FROM transactions WHERE LOWER(description) LIKE '%' || LOWER(?) || '%' AND source = 'manual'",
+		rule.Keyword,
+	).Scan(&protected)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to count protected transactions: %w", err)
+	}
+
+	return int(updated), protected, nil
+}
+
+func (c *DatabaseClient) ApplyAllRules() (int, int, error) {
+	rules, err := c.GetAllRules()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	rows, err := c.db.Query("SELECT id, description, source FROM transactions WHERE source != 'manual'")
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to query transactions: %w", err)
+	}
+	defer rows.Close()
+
+	type txRecord struct {
+		id   int64
+		desc string
+	}
+	var transactions []txRecord
+	for rows.Next() {
+		var tx txRecord
+		var source string
+		if err := rows.Scan(&tx.id, &tx.desc, &source); err != nil {
+			return 0, 0, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		transactions = append(transactions, tx)
+	}
+
+	updateMap := make(map[string][]int64)
+	for _, tx := range transactions {
+		for _, rule := range rules {
+			if strings.Contains(strings.ToLower(tx.desc), strings.ToLower(rule.Keyword)) {
+				updateMap[rule.Category] = append(updateMap[rule.Category], tx.id)
+				break
+			}
+		}
+	}
+
+	var totalUpdated int
+	for category, ids := range updateMap {
+		placeholders := make([]string, len(ids))
+		args := []interface{}{category, "rule"}
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+
+		query := fmt.Sprintf(
+			"UPDATE transactions SET category=?, source=? WHERE id IN (%s)",
+			strings.Join(placeholders, ","),
+		)
+		result, err := c.db.Exec(query, args...)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to apply rules: %w", err)
+		}
+		updated, _ := result.RowsAffected()
+		totalUpdated += int(updated)
+	}
+
+	var protected int
+	err = c.db.QueryRow("SELECT COUNT(*) FROM transactions WHERE source = 'manual'").Scan(&protected)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to count protected transactions: %w", err)
+	}
+
+	return totalUpdated, protected, nil
+}
+
+func (c *DatabaseClient) FindMatchingRule(description string) (*MerchantRule, error) {
+	rows, err := c.db.Query("SELECT id, keyword, category, priority, created_at FROM merchant_rules ORDER BY priority DESC, id ASC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rules: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var rule MerchantRule
+		if err := rows.Scan(&rule.ID, &rule.Keyword, &rule.Category, &rule.Priority, &rule.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan rule: %w", err)
+		}
+
+		if strings.Contains(strings.ToLower(description), strings.ToLower(rule.Keyword)) {
+			return &rule, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func (c *DatabaseClient) Close() error {

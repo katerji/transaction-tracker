@@ -129,6 +129,8 @@ func main() {
 	http.HandleFunc("/stats", statsHandler(dbClient))
 	http.HandleFunc("/export", exportHandler(dbClient))
 	http.HandleFunc("/import", importHandler(dbClient))
+	http.HandleFunc("/rules", rulesHandler(dbClient))
+	http.HandleFunc("/rules/", ruleDetailHandler(dbClient))
 	http.Handle("/js/", staticHandler)
 	http.HandleFunc("/", dashboardHandler)
 
@@ -147,6 +149,13 @@ func main() {
 	log.Printf("[Server]   GET    /stats         - Get spending statistics")
 	log.Printf("[Server]   GET    /export        - Export CSV")
 	log.Printf("[Server]   POST   /import        - Import CSV")
+	log.Printf("[Server]   GET    /rules         - Get all merchant rules")
+	log.Printf("[Server]   POST   /rules         - Create merchant rule")
+	log.Printf("[Server]   PUT    /rules/:id     - Update merchant rule")
+	log.Printf("[Server]   DELETE /rules/:id     - Delete merchant rule")
+	log.Printf("[Server]   POST   /rules/:id/apply - Apply single rule")
+	log.Printf("[Server]   POST   /rules/apply-all - Apply all rules")
+	log.Printf("[Server]   POST   /rules/:id/move - Move rule priority")
 	log.Printf("[Server]   GET    /health        - Health check")
 	log.Printf("[Server] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	log.Printf("[Server] Server ready at http://localhost:%s", config.Port)
@@ -219,6 +228,14 @@ func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFu
 		for i, tx := range transactions {
 			log.Printf("[API] Processing transaction %d/%d", i+1, len(transactions))
 			enriched := enrichTransaction(tx)
+
+			rule, err := db.FindMatchingRule(enriched.Description)
+			if err == nil && rule != nil {
+				enriched.Category = rule.Category
+				enriched.Source = "rule"
+			} else {
+				enriched.Source = "openai"
+			}
 
 			id, err := db.SaveTransaction(enriched)
 			if err != nil {
@@ -526,6 +543,7 @@ func manualTransactionHandler(db *DatabaseClient) http.HandlerFunc {
 			Date:        req.Date,
 			Category:    req.Category,
 			Confidence:  100, // Manual entry has 100% confidence
+			Source:      "manual",
 		}
 
 		// Enrich with timestamp and billing cycle
@@ -574,18 +592,218 @@ func calculateBillingCycle(dateStr string) string {
 	return cycleStart.Format("Jan 2006")
 }
 
+func rulesHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			log.Printf("[API] GET /rules - Request from %s", r.RemoteAddr)
+			rules, err := db.GetAllRules()
+			if err != nil {
+				log.Printf("[API] Failed to get rules: %v", err)
+				http.Error(w, "Failed to retrieve rules", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"rules":   rules,
+			})
+
+		case http.MethodPost:
+			log.Printf("[API] POST /rules - Create rule request from %s", r.RemoteAddr)
+			var req struct {
+				Keyword  string `json:"keyword"`
+				Category string `json:"category"`
+				Priority int    `json:"priority"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Printf("[API] Invalid request body: %v", err)
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			rule, matchCount, protectedCount, err := db.CreateRule(req.Keyword, req.Category, req.Priority)
+			if err != nil {
+				log.Printf("[API] Failed to create rule: %v", err)
+				http.Error(w, "Failed to create rule", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":         true,
+				"rule":            rule,
+				"match_count":     matchCount,
+				"protected_count": protectedCount,
+			})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func ruleDetailHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		if path == "/rules/apply-all" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			log.Printf("[API] POST /rules/apply-all - Apply all rules from %s", r.RemoteAddr)
+			updated, protected, err := db.ApplyAllRules()
+			if err != nil {
+				log.Printf("[API] Failed to apply all rules: %v", err)
+				http.Error(w, "Failed to apply rules", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":   true,
+				"updated":   updated,
+				"protected": protected,
+			})
+			return
+		}
+
+		if path == "/rules/" || path == "/rules" {
+			http.NotFound(w, r)
+			return
+		}
+
+		idStr := path[len("/rules/"):]
+		var id int64
+		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+			http.Error(w, "Invalid rule ID", http.StatusBadRequest)
+			return
+		}
+
+		if strings.HasSuffix(path, "/apply") {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			log.Printf("[API] POST /rules/%d/apply - Apply rule from %s", id, r.RemoteAddr)
+			updated, protected, err := db.ApplyRuleSingle(id)
+			if err != nil {
+				log.Printf("[API] Failed to apply rule: %v", err)
+				if err.Error() == "rule not found" {
+					http.Error(w, "Rule not found", http.StatusNotFound)
+				} else {
+					http.Error(w, "Failed to apply rule", http.StatusInternalServerError)
+				}
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":   true,
+				"updated":   updated,
+				"protected": protected,
+			})
+			return
+		}
+
+		if strings.HasSuffix(path, "/move") {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			log.Printf("[API] POST /rules/%d/move - Move rule from %s", id, r.RemoteAddr)
+			var req struct {
+				Direction string `json:"direction"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Printf("[API] Invalid request body: %v", err)
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			if err := db.MoveRulePriority(id, req.Direction); err != nil {
+				log.Printf("[API] Failed to move rule: %v", err)
+				http.Error(w, "Failed to move rule", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+			})
+			return
+		}
+
+		switch r.Method {
+		case http.MethodPut:
+			log.Printf("[API] PUT /rules/%d - Update rule from %s", id, r.RemoteAddr)
+			var req struct {
+				Keyword  string `json:"keyword"`
+				Category string `json:"category"`
+				Priority int    `json:"priority"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Printf("[API] Invalid request body: %v", err)
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			if err := db.UpdateRule(id, req.Keyword, req.Category, req.Priority); err != nil {
+				log.Printf("[API] Failed to update rule: %v", err)
+				if err.Error() == "rule not found" {
+					http.Error(w, "Rule not found", http.StatusNotFound)
+				} else {
+					http.Error(w, "Failed to update rule", http.StatusInternalServerError)
+				}
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+			})
+
+		case http.MethodDelete:
+			log.Printf("[API] DELETE /rules/%d - Delete rule from %s", id, r.RemoteAddr)
+			if err := db.DeleteRule(id); err != nil {
+				log.Printf("[API] Failed to delete rule: %v", err)
+				if err.Error() == "rule not found" {
+					http.Error(w, "Rule not found", http.StatusNotFound)
+				} else {
+					http.Error(w, "Failed to delete rule", http.StatusInternalServerError)
+				}
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+			})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
 func getCategoryEmoji(category string) string {
 	emojis := map[string]string{
-		"Food & Dining":     "🍔",
+		"Groceries":         "🛒",
+		"Dining Out":        "🍔",
 		"Transport":         "🚗",
 		"Shopping":          "🛍️",
+		"Subscriptions":     "📱",
 		"Bills & Utilities": "💳",
-		"Entertainment":     "🎬",
-		"Health & Fitness":  "💪",
+		"Health":            "💊",
 		"Travel":            "✈️",
+		"Entertainment":     "🎬",
 		"Cash Withdrawal":   "💵",
 		"Income/Transfer":   "💰",
-		"Unknown":           "❓",
 	}
 	if emoji, ok := emojis[category]; ok {
 		return emoji

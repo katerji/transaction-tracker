@@ -30,16 +30,17 @@ export function formatDateTime(dateTimeStr) {
 
 export function getCategoryEmoji(category) {
   const emojis = {
-    'Food & Dining': '🍔',
-    Transport: '🚗',
-    Shopping: '🛍️',
+    'Groceries': '🛒',
+    'Dining Out': '🍔',
+    'Transport': '🚗',
+    'Shopping': '🛍️',
+    'Subscriptions': '📱',
     'Bills & Utilities': '💳',
-    Entertainment: '🎬',
-    'Health & Fitness': '💪',
-    Travel: '✈️',
+    'Health': '💊',
+    'Travel': '✈️',
+    'Entertainment': '🎬',
     'Cash Withdrawal': '💵',
     'Income/Transfer': '💰',
-    Unknown: '❓',
   };
   return emojis[category] || '📌';
 }

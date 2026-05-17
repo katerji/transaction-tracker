@@ -47,3 +47,57 @@ export async function parseTransaction(text) {
   if (!result.success) throw new Error(result.message || 'No transactions found');
   return result;
 }
+
+export async function fetchRules() {
+  const res = await fetch('/rules');
+  if (!res.ok) throw new Error('Failed to fetch rules');
+  return res.json();
+}
+
+export async function createRule(data) {
+  const res = await fetch('/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create rule');
+  return res.json();
+}
+
+export async function updateRule(id, data) {
+  const res = await fetch('/rules/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update rule');
+  return res.json();
+}
+
+export async function deleteRule(id) {
+  const res = await fetch('/rules/' + id, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete rule');
+  return res.json();
+}
+
+export async function applyRuleSingle(id) {
+  const res = await fetch('/rules/' + id + '/apply', { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to apply rule');
+  return res.json();
+}
+
+export async function applyAllRules() {
+  const res = await fetch('/rules/apply-all', { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to apply all rules');
+  return res.json();
+}
+
+export async function moveRulePriority(id, direction) {
+  const res = await fetch('/rules/' + id + '/move', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction }),
+  });
+  if (!res.ok) throw new Error('Failed to move rule');
+  return res.json();
+}

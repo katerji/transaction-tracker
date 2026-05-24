@@ -10,14 +10,15 @@ func TestGetAllCategories_ReturnsSeededDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAllCategories failed: %v", err)
 	}
-	if len(cats) != 11 {
-		t.Errorf("expected 11 seeded categories, got %d", len(cats))
+	// 11 seeded + 8 new from data migrations - 1 Travel (deleted, no transactions) = 18
+	if len(cats) != 18 {
+		t.Errorf("expected 18 categories after migrations, got %d", len(cats))
 	}
 }
 
 func TestCreateCategory_Success(t *testing.T) {
 	db := setupTestDB(t)
-	cat, err := db.CreateCategory("Fitness", "🏋️", false)
+	cat, err := db.CreateCategory("Fitness", "🏋️", false, "wants", nil)
 	if err != nil {
 		t.Fatalf("CreateCategory failed: %v", err)
 	}
@@ -34,7 +35,7 @@ func TestCreateCategory_Success(t *testing.T) {
 
 func TestCreateCategory_DuplicateName(t *testing.T) {
 	db := setupTestDB(t)
-	_, err := db.CreateCategory("Groceries", "🛒", false)
+	_, err := db.CreateCategory("Groceries", "🛒", false, "wants", nil)
 	if err == nil {
 		t.Error("expected error for duplicate category name, got nil")
 	}
@@ -73,7 +74,7 @@ func TestUpdateCategory_CascadesRename(t *testing.T) {
 	}
 
 	// Rename Groceries → Food
-	if err := db.UpdateCategory(grocID, "Food", "🥘", false); err != nil {
+	if err := db.UpdateCategory(grocID, "Food", "🥘", false, "wants", nil); err != nil {
 		t.Fatalf("UpdateCategory failed: %v", err)
 	}
 
@@ -87,14 +88,14 @@ func TestUpdateCategory_CascadesRename(t *testing.T) {
 	}
 }
 
-func TestDeleteCategory_BlockedIfTransactionsExist(t *testing.T) {
+func TestDeleteCategory_AllowedWithTransactions(t *testing.T) {
 	db := setupTestDB(t)
 
 	_, err := db.SaveTransaction(Transaction{
 		Description:  "Test TX",
 		Amount:       50,
 		Date:         "2026-01-01",
-		Category:     "Shopping",
+		Category:     "Shopping & Gifts",
 		Confidence:   90,
 		BillingCycle: "Dec 2025",
 		Timestamp:    "2026-01-01T00:00:00Z",
@@ -107,22 +108,21 @@ func TestDeleteCategory_BlockedIfTransactionsExist(t *testing.T) {
 	cats, _ := db.GetAllCategories()
 	var shopID int64
 	for _, c := range cats {
-		if c.Name == "Shopping" {
+		if c.Name == "Shopping & Gifts" {
 			shopID = c.ID
 			break
 		}
 	}
 
-	err = db.DeleteCategory(shopID)
-	if err == nil {
-		t.Error("expected error when deleting category with active transactions, got nil")
+	if err = db.DeleteCategory(shopID); err != nil {
+		t.Errorf("expected deletion to succeed even with transactions, got: %v", err)
 	}
 }
 
 func TestDeleteCategory_Success(t *testing.T) {
 	db := setupTestDB(t)
 
-	cat, err := db.CreateCategory("Temporary", "🗑️", false)
+	cat, err := db.CreateCategory("Temporary", "🗑️", false, "wants", nil)
 	if err != nil {
 		t.Fatalf("CreateCategory failed: %v", err)
 	}

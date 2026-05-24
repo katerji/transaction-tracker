@@ -51,6 +51,10 @@ type StatsResponse struct {
 	LastTransaction     *TransactionSummary `json:"lastTransaction,omitempty"`
 	AllTransactions     []Transaction       `json:"allTransactions,omitempty"`
 	CategoryDefinitions []Category          `json:"categoryDefinitions,omitempty"`
+	FixedTotal   float64 `json:"fixed_total"`
+	WantsTotal   float64 `json:"wants_total"`
+	FixedBudget  float64 `json:"fixed_budget"`
+	WantsBudget  float64 `json:"wants_budget"`
 }
 
 type CategoryStats struct {
@@ -863,9 +867,11 @@ func categoriesHandler(db *DatabaseClient) http.HandlerFunc {
 		case http.MethodPost:
 			log.Printf("[API] POST /categories - Create category from %s", r.RemoteAddr)
 			var req struct {
-				Name              string `json:"name"`
-				Emoji             string `json:"emoji"`
-				ExcludeFromTotals bool   `json:"excludeFromTotals"`
+				Name              string   `json:"name"`
+				Emoji             string   `json:"emoji"`
+				ExcludeFromTotals bool     `json:"excludeFromTotals"`
+				Type              string   `json:"type"`
+				BudgetAmount      *float64 `json:"budgetAmount"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -875,7 +881,7 @@ func categoriesHandler(db *DatabaseClient) http.HandlerFunc {
 				http.Error(w, "Name is required", http.StatusBadRequest)
 				return
 			}
-			cat, err := db.CreateCategory(req.Name, req.Emoji, req.ExcludeFromTotals)
+			cat, err := db.CreateCategory(req.Name, req.Emoji, req.ExcludeFromTotals, req.Type, req.BudgetAmount)
 			if err != nil {
 				log.Printf("[API] Failed to create category: %v", err)
 				http.Error(w, "Failed to create category", http.StatusInternalServerError)
@@ -907,9 +913,11 @@ func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
 		case http.MethodPut:
 			log.Printf("[API] PUT /categories/%d - Update from %s", id, r.RemoteAddr)
 			var req struct {
-				Name              string `json:"name"`
-				Emoji             string `json:"emoji"`
-				ExcludeFromTotals bool   `json:"excludeFromTotals"`
+				Name              string   `json:"name"`
+				Emoji             string   `json:"emoji"`
+				ExcludeFromTotals bool     `json:"excludeFromTotals"`
+				Type              string   `json:"type"`
+				BudgetAmount      *float64 `json:"budgetAmount"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -919,7 +927,7 @@ func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
 				http.Error(w, "Name is required", http.StatusBadRequest)
 				return
 			}
-			if err := db.UpdateCategory(id, req.Name, req.Emoji, req.ExcludeFromTotals); err != nil {
+			if err := db.UpdateCategory(id, req.Name, req.Emoji, req.ExcludeFromTotals, req.Type, req.BudgetAmount); err != nil {
 				log.Printf("[API] Failed to update category: %v", err)
 				if err.Error() == "category not found" {
 					http.Error(w, "Category not found", http.StatusNotFound)

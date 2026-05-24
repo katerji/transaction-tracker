@@ -110,12 +110,12 @@ export default function app() {
 
     // Category add modal
     catAddOpen: false,
-    catAddForm: { name: '', emoji: '', excludeFromTotals: false },
+    catAddForm: { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '' },
 
     // Category edit modal
     catEditOpen: false,
     catEditId: null,
-    catEditForm: { name: '', emoji: '', excludeFromTotals: false },
+    catEditForm: { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '' },
 
     // Category delete modal
     catDeleteOpen: false,
@@ -168,7 +168,7 @@ export default function app() {
       return computeBiggestExpense(this.allTransactions);
     },
     get dailyAverage() {
-      return computeDailyAverage(this.stats?.total || 0, this.stats?.cycle || '');
+      return computeDailyAverage(this.stats?.wants_total || 0, this.stats?.cycle || '');
     },
     get topCategory() {
       return computeTopCategory(this.categories);
@@ -177,6 +177,37 @@ export default function app() {
       return [...this.allTransactions]
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 5);
+    },
+
+    // Category section getters
+    get fixedCategories() {
+      return this.categoryDefinitions
+        .filter(def => def.type === 'fixed')
+        .map(def => this._mergeWithSpending(def));
+    },
+
+    get wantsCategories() {
+      return this.categoryDefinitions
+        .filter(def => def.type === 'wants')
+        .map(def => this._mergeWithSpending(def));
+    },
+
+    get otherCategories() {
+      return this.categories.filter(c => {
+        const def = this.categoryDefinitions.find(d => d.name === c.category);
+        return def && def.type === 'other';
+      });
+    },
+
+    _mergeWithSpending(def) {
+      const spending = this.categories.find(c => c.category === def.name);
+      return {
+        ...def,
+        total:        spending ? spending.total : 0,
+        count:        spending ? spending.count : 0,
+        transactions: spending ? spending.transactions : [],
+        emoji:        def.emoji || '📌',
+      };
     },
 
     // Transactions getters
@@ -223,7 +254,7 @@ export default function app() {
     // --- Categories management ---
 
     openCatAdd() {
-      this.catAddForm = { name: '', emoji: '', excludeFromTotals: false };
+      this.catAddForm = { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '' };
       this.catAddOpen = true;
     },
 
@@ -238,6 +269,8 @@ export default function app() {
           name: this.catAddForm.name.trim(),
           emoji: this.catAddForm.emoji.trim(),
           excludeFromTotals: this.catAddForm.excludeFromTotals,
+          type: this.catAddForm.type || 'wants',
+          budgetAmount: this.catAddForm.budgetAmount !== '' ? parseFloat(this.catAddForm.budgetAmount) : null,
         });
         this.catAddOpen = false;
         await this.loadDashboard();
@@ -249,7 +282,13 @@ export default function app() {
 
     openCatEdit(cat) {
       this.catEditId = cat.id;
-      this.catEditForm = { name: cat.name, emoji: cat.emoji, excludeFromTotals: cat.excludeFromTotals };
+      this.catEditForm = {
+        name: cat.name,
+        emoji: cat.emoji,
+        excludeFromTotals: cat.excludeFromTotals,
+        type: cat.type || 'wants',
+        budgetAmount: cat.budgetAmount != null ? cat.budgetAmount : '',
+      };
       this.catEditOpen = true;
     },
 
@@ -264,6 +303,8 @@ export default function app() {
           name: this.catEditForm.name.trim(),
           emoji: this.catEditForm.emoji.trim(),
           excludeFromTotals: this.catEditForm.excludeFromTotals,
+          type: this.catEditForm.type || 'wants',
+          budgetAmount: this.catEditForm.budgetAmount !== '' ? parseFloat(this.catEditForm.budgetAmount) : null,
         });
         this.catEditOpen = false;
         await this.loadDashboard();

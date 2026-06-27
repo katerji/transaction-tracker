@@ -1126,6 +1126,20 @@ func (c *DatabaseClient) DeleteCategory(id int64) error {
 	return nil
 }
 
+// SetCategoryTarget sets, edits, or clears a category's spending target
+// (budget_amount). A non-nil amount sets/edits the target; nil clears it.
+func (c *DatabaseClient) SetCategoryTarget(id int64, amount *float64) error {
+	result, err := c.db.Exec("UPDATE categories SET budget_amount=? WHERE id=?", amount, id)
+	if err != nil {
+		return fmt.Errorf("failed to set category target: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("category not found")
+	}
+	return nil
+}
+
 func (c *DatabaseClient) Close() error {
 	log.Printf("[Database] Closing database connection")
 	return c.db.Close()

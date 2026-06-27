@@ -146,3 +146,62 @@ func TestDeleteCategory_NotFound(t *testing.T) {
 		t.Error("expected error for nonexistent category ID, got nil")
 	}
 }
+
+func TestSetCategoryTarget_SetEditAndRemove(t *testing.T) {
+	db := setupTestDB(t)
+
+	cat, err := db.CreateCategory("Shopping Target", "🛍️", false, "wants", nil)
+	if err != nil {
+		t.Fatalf("CreateCategory failed: %v", err)
+	}
+	if cat.BudgetAmount != nil {
+		t.Fatalf("expected new category to have no target, got %v", *cat.BudgetAmount)
+	}
+
+	// Set a target.
+	if err := db.SetCategoryTarget(cat.ID, floatPtr(2000)); err != nil {
+		t.Fatalf("SetCategoryTarget (set) failed: %v", err)
+	}
+	if got := targetOf(t, db, cat.ID); got == nil || *got != 2000 {
+		t.Errorf("expected target 2000 after set, got %v", got)
+	}
+
+	// Edit the target.
+	if err := db.SetCategoryTarget(cat.ID, floatPtr(1500)); err != nil {
+		t.Fatalf("SetCategoryTarget (edit) failed: %v", err)
+	}
+	if got := targetOf(t, db, cat.ID); got == nil || *got != 1500 {
+		t.Errorf("expected target 1500 after edit, got %v", got)
+	}
+
+	// Remove the target.
+	if err := db.SetCategoryTarget(cat.ID, nil); err != nil {
+		t.Fatalf("SetCategoryTarget (remove) failed: %v", err)
+	}
+	if got := targetOf(t, db, cat.ID); got != nil {
+		t.Errorf("expected no target after remove, got %v", *got)
+	}
+}
+
+func TestSetCategoryTarget_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	if err := db.SetCategoryTarget(99999, floatPtr(100)); err == nil {
+		t.Error("expected error for nonexistent category ID, got nil")
+	}
+}
+
+// targetOf returns the current budget_amount for a category by ID.
+func targetOf(t *testing.T, db *DatabaseClient, id int64) *float64 {
+	t.Helper()
+	cats, err := db.GetAllCategories()
+	if err != nil {
+		t.Fatalf("GetAllCategories failed: %v", err)
+	}
+	for _, c := range cats {
+		if c.ID == id {
+			return c.BudgetAmount
+		}
+	}
+	t.Fatalf("category %d not found", id)
+	return nil
+}

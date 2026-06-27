@@ -8,7 +8,7 @@ import {
   nowLocalInput,
 } from './utils.js';
 
-import { fetchDashboard, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority, createCategory, updateCategory, deleteCategory } from './api.js';
+import { fetchDashboard, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority, createCategory, updateCategory, deleteCategory, setCategoryTarget, removeCategoryTarget } from './api.js';
 import { computeTodaySpend, computeBiggestExpense, computeDailyAverage, computeTopCategory } from './tabs/dashboard.js';
 import { computeSearchedAndSorted, computeGroupedByDate } from './tabs/transactions.js';
 
@@ -111,6 +111,9 @@ export default function app() {
 
     // Categories manage mode
     categoriesManageMode: false,
+
+    // Categories targets mode (per-category spending targets)
+    targetsMode: false,
 
     // Category add modal
     catAddOpen: false,
@@ -346,6 +349,41 @@ export default function app() {
       this.catDeleteOpen = false;
       await this.loadDashboard();
       this.showToast('Category deleted');
+    },
+
+    // --- Category targets ---
+
+    toggleTargetsMode() {
+      this.targetsMode = !this.targetsMode;
+      if (this.targetsMode) this.categoriesManageMode = false;
+      hapticFeedback('light');
+    },
+
+    async setCategoryTarget(id, value) {
+      const amount = parseFloat(value);
+      if (!(amount > 0)) {
+        this.showToast('Enter an amount greater than 0');
+        return;
+      }
+      try {
+        await setCategoryTarget(id, amount);
+        hapticFeedback('light');
+        await this.loadDashboard();
+        this.showToast('Target saved');
+      } catch (e) {
+        this.showToast('Failed to save target: ' + e.message);
+      }
+    },
+
+    async removeCategoryTarget(id) {
+      try {
+        await removeCategoryTarget(id);
+        hapticFeedback('light');
+        await this.loadDashboard();
+        this.showToast('Target removed');
+      } catch (e) {
+        this.showToast('Failed to remove target: ' + e.message);
+      }
     },
 
     // Edit modal

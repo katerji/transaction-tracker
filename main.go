@@ -162,6 +162,8 @@ func main() {
 	log.Printf("[Server]   POST   /categories    - Create category")
 	log.Printf("[Server]   PUT    /categories/:id - Update category")
 	log.Printf("[Server]   DELETE /categories/:id - Delete category")
+	log.Printf("[Server]   PUT    /categories/:id/target - Set category target")
+	log.Printf("[Server]   DELETE /categories/:id/target - Remove category target")
 	log.Printf("[Server]   GET    /rules         - Get all merchant rules")
 	log.Printf("[Server]   POST   /rules         - Create merchant rule")
 	log.Printf("[Server]   PUT    /rules/:id     - Update merchant rule")
@@ -955,6 +957,55 @@ func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
 		var id int64
 		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
 			http.Error(w, "Invalid category ID", http.StatusBadRequest)
+			return
+		}
+
+		// /categories/:id/target — dedicated set/edit/remove of a category's
+		// spending target (budget_amount), independent of full category edits.
+		if strings.HasSuffix(path, "/target") {
+			switch r.Method {
+			case http.MethodPut:
+				log.Printf("[API] PUT /categories/%d/target - Set target from %s", id, r.RemoteAddr)
+				var req struct {
+					BudgetAmount *float64 `json:"budgetAmount"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, "Invalid request body", http.StatusBadRequest)
+					return
+				}
+				if req.BudgetAmount == nil || *req.BudgetAmount <= 0 {
+					http.Error(w, "budgetAmount must be greater than 0", http.StatusBadRequest)
+					return
+				}
+				if err := db.SetCategoryTarget(id, req.BudgetAmount); err != nil {
+					log.Printf("[API] Failed to set category target: %v", err)
+					if err.Error() == "category not found" {
+						http.Error(w, "Category not found", http.StatusNotFound)
+					} else {
+						http.Error(w, "Failed to set target", http.StatusInternalServerError)
+					}
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+
+			case http.MethodDelete:
+				log.Printf("[API] DELETE /categories/%d/target - Remove target from %s", id, r.RemoteAddr)
+				if err := db.SetCategoryTarget(id, nil); err != nil {
+					log.Printf("[API] Failed to remove category target: %v", err)
+					if err.Error() == "category not found" {
+						http.Error(w, "Category not found", http.StatusNotFound)
+					} else {
+						http.Error(w, "Failed to remove target", http.StatusInternalServerError)
+					}
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
 			return
 		}
 

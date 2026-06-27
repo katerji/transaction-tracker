@@ -135,3 +135,19 @@ export async function deleteCategory(id) {
   try { data = await res.json(); } catch { data = { success: false, message: 'Request failed' }; }
   return { status: res.status, data };
 }
+
+export async function setCategoryTarget(id, budgetAmount) {
+  const res = await fetch('/categories/' + id + '/target', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ budgetAmount }),
+  });
+  if (!res.ok) throw new Error('Failed to set target');
+  return res.json();
+}
+
+export async function removeCategoryTarget(id) {
+  const res = await fetch('/categories/' + id + '/target', { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to remove target');
+  return res.json();
+}

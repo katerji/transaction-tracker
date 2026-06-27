@@ -8,7 +8,7 @@ import {
   nowLocalInput,
 } from './utils.js';
 
-import { fetchDashboard, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority, createCategory, updateCategory, deleteCategory, setCategoryTarget, removeCategoryTarget } from './api.js';
+import { fetchDashboard, createTransaction, updateTransaction, removeTransaction, parseTransaction, fetchRules, createRule, updateRule, deleteRule, applyRuleSingle, applyAllRules, moveRulePriority, createCategory, updateCategory, deleteCategory, setCategoryTarget, removeCategoryTarget, setFunding, setSalary } from './api.js';
 import { computeTodaySpend, computeBiggestExpense, computeDailyAverage, computeTopCategory } from './tabs/dashboard.js';
 import { computeSearchedAndSorted, computeGroupedByDate } from './tabs/transactions.js';
 
@@ -117,12 +117,16 @@ export default function app() {
 
     // Category add modal
     catAddOpen: false,
-    catAddForm: { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '' },
+    catAddForm: { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '', tracking: 'actual' },
 
     // Category edit modal
     catEditOpen: false,
     catEditId: null,
-    catEditForm: { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '' },
+    catEditForm: { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '', tracking: 'actual' },
+
+    // Salary editing
+    salaryEditOpen: false,
+    salaryDraft: '',
 
     // Category delete modal
     catDeleteOpen: false,
@@ -187,6 +191,60 @@ export default function app() {
       return [...this.allTransactions]
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 5);
+    },
+
+    // --- Salary budgeting ---
+    get spendingBudget() { return this.stats?.wants_budget || 0; },
+    get spendingSpent()  { return this.stats?.wants_total || 0; },
+    get spendingLeft()   { return this.spendingBudget - this.spendingSpent; },
+    get salary()         { return this.stats?.salary || 0; },
+    get salarySpent()    { return this.stats?.salary_spent || 0; },
+    get goalsFunded()    { return this.stats?.goals_funded || 0; },
+    get goalsBudget()    { return this.stats?.goals_budget || 0; },
+    get fixedTotal()     { return this.stats?.fixed_total || 0; },
+    get fixedBudget()    { return this.stats?.fixed_budget || 0; },
+    // Everything committed out of salary this cycle (fixed + spending + goals).
+    get salaryAllocated() { return this.salarySpent + this.goalsFunded; },
+    get salaryRemaining() { return this.salary - this.salaryAllocated; },
+
+    // Allocated (set-aside) categories with this-cycle funded state, for the checklist.
+    get allocatedItems() {
+      const fundedIds = this.stats?.fundedCategoryIds || [];
+      const order = { fixed: 0, goal: 1 };
+      return this.categoryDefinitions
+        .filter(def => def.tracking === 'allocated')
+        .map(def => ({ ...def, emoji: def.emoji || '📌', funded: fundedIds.includes(def.id) }))
+        .sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9));
+    },
+    get allocatedFundedCount() { return this.allocatedItems.filter(i => i.funded).length; },
+
+    async toggleFunding(cat) {
+      const next = !cat.funded;
+      try {
+        await setFunding(this.stats?.cycle || this.selectedCycle, cat.id, next);
+        hapticFeedback(next ? 'success' : 'light');
+        await this.loadDashboard();
+      } catch (e) {
+        this.showToast('Failed to update: ' + e.message);
+      }
+    },
+
+    openSalaryEdit() {
+      this.salaryDraft = this.salary ? String(this.salary) : '';
+      this.salaryEditOpen = true;
+    },
+    closeSalaryEdit() { this.salaryEditOpen = false; },
+    async saveSalary() {
+      const amount = parseFloat(this.salaryDraft);
+      if (!(amount > 0)) { this.showToast('Enter a salary greater than 0'); return; }
+      try {
+        await setSalary(amount);
+        this.salaryEditOpen = false;
+        await this.loadDashboard();
+        this.showToast('Salary updated');
+      } catch (e) {
+        this.showToast('Failed to update salary: ' + e.message);
+      }
     },
 
     // Category section getters
@@ -264,7 +322,7 @@ export default function app() {
     // --- Categories management ---
 
     openCatAdd() {
-      this.catAddForm = { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '' };
+      this.catAddForm = { name: '', emoji: '', excludeFromTotals: false, type: 'wants', budgetAmount: '', tracking: 'actual' };
       this.catAddOpen = true;
     },
 
@@ -281,6 +339,7 @@ export default function app() {
           excludeFromTotals: this.catAddForm.excludeFromTotals,
           type: this.catAddForm.type || 'wants',
           budgetAmount: this.catAddForm.budgetAmount !== '' ? parseFloat(this.catAddForm.budgetAmount) : null,
+          tracking: this.catAddForm.tracking || 'actual',
         });
         this.catAddOpen = false;
         await this.loadDashboard();
@@ -298,6 +357,7 @@ export default function app() {
         excludeFromTotals: cat.excludeFromTotals,
         type: cat.type || 'wants',
         budgetAmount: cat.budgetAmount != null ? cat.budgetAmount : '',
+        tracking: cat.tracking || 'actual',
       };
       this.catEditOpen = true;
     },
@@ -315,6 +375,7 @@ export default function app() {
           excludeFromTotals: this.catEditForm.excludeFromTotals,
           type: this.catEditForm.type || 'wants',
           budgetAmount: this.catEditForm.budgetAmount !== '' ? parseFloat(this.catEditForm.budgetAmount) : null,
+          tracking: this.catEditForm.tracking || 'actual',
         });
         this.catEditOpen = false;
         await this.loadDashboard();
@@ -953,6 +1014,7 @@ export default function app() {
             this.catAddOpen = false;
             this.catEditOpen = false;
             this.catDeleteOpen = false;
+            this.salaryEditOpen = false;
             el.style.transform = 'translateY(0)';
           }, 300);
         } else {

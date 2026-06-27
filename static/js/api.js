@@ -151,3 +151,23 @@ export async function removeCategoryTarget(id) {
   if (!res.ok) throw new Error('Failed to remove target');
   return res.json();
 }
+
+export async function setFunding(cycle, categoryId, funded) {
+  const res = await fetch('/funding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cycle, categoryId, funded }),
+  });
+  if (!res.ok) throw new Error('Failed to update funding');
+  return res.json();
+}
+
+export async function setSalary(salary) {
+  const res = await fetch('/salary', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ salary }),
+  });
+  if (!res.ok) throw new Error('Failed to update salary');
+  return res.json();
+}

@@ -53,10 +53,15 @@ type StatsResponse struct {
 	AllTransactions     []Transaction       `json:"allTransactions,omitempty"`
 	CategoryDefinitions []Category          `json:"categoryDefinitions,omitempty"`
 	AvailableCycles     []CycleOption       `json:"availableCycles,omitempty"`
-	FixedTotal   float64 `json:"fixed_total"`
-	WantsTotal   float64 `json:"wants_total"`
-	FixedBudget  float64 `json:"fixed_budget"`
-	WantsBudget  float64 `json:"wants_budget"`
+	Salary            float64 `json:"salary"`
+	FixedTotal        float64 `json:"fixed_total"`
+	WantsTotal        float64 `json:"wants_total"`
+	GoalsFunded       float64 `json:"goals_funded"`
+	SalarySpent       float64 `json:"salary_spent"`
+	FixedBudget       float64 `json:"fixed_budget"`
+	WantsBudget       float64 `json:"wants_budget"`
+	GoalsBudget       float64 `json:"goals_budget"`
+	FundedCategoryIDs []int64 `json:"fundedCategoryIds"`
 }
 
 type CategoryStats struct {
@@ -140,6 +145,8 @@ func main() {
 	http.HandleFunc("/rules/", ruleDetailHandler(dbClient))
 	http.HandleFunc("/categories", categoriesHandler(dbClient))
 	http.HandleFunc("/categories/", categoryDetailHandler(dbClient))
+	http.HandleFunc("/funding", fundingHandler(dbClient))
+	http.HandleFunc("/salary", salaryHandler(dbClient))
 	http.Handle("/js/", staticHandler)
 	http.HandleFunc("/", indexHandler)
 
@@ -923,6 +930,7 @@ func categoriesHandler(db *DatabaseClient) http.HandlerFunc {
 				ExcludeFromTotals bool     `json:"excludeFromTotals"`
 				Type              string   `json:"type"`
 				BudgetAmount      *float64 `json:"budgetAmount"`
+				Tracking          string   `json:"tracking"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -932,7 +940,7 @@ func categoriesHandler(db *DatabaseClient) http.HandlerFunc {
 				http.Error(w, "Name is required", http.StatusBadRequest)
 				return
 			}
-			cat, err := db.CreateCategory(req.Name, req.Emoji, req.ExcludeFromTotals, req.Type, req.BudgetAmount)
+			cat, err := db.CreateCategory(req.Name, req.Emoji, req.ExcludeFromTotals, req.Type, req.BudgetAmount, req.Tracking)
 			if err != nil {
 				log.Printf("[API] Failed to create category: %v", err)
 				http.Error(w, "Failed to create category", http.StatusInternalServerError)
@@ -1018,6 +1026,7 @@ func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
 				ExcludeFromTotals bool     `json:"excludeFromTotals"`
 				Type              string   `json:"type"`
 				BudgetAmount      *float64 `json:"budgetAmount"`
+				Tracking          string   `json:"tracking"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -1027,7 +1036,7 @@ func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
 				http.Error(w, "Name is required", http.StatusBadRequest)
 				return
 			}
-			if err := db.UpdateCategory(id, req.Name, req.Emoji, req.ExcludeFromTotals, req.Type, req.BudgetAmount); err != nil {
+			if err := db.UpdateCategory(id, req.Name, req.Emoji, req.ExcludeFromTotals, req.Type, req.BudgetAmount, req.Tracking); err != nil {
 				log.Printf("[API] Failed to update category: %v", err)
 				if err.Error() == "category not found" {
 					http.Error(w, "Category not found", http.StatusNotFound)
@@ -1064,6 +1073,94 @@ func categoryDetailHandler(db *DatabaseClient) http.HandlerFunc {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
+	}
+}
+
+// fundingHandler toggles the "set aside" funding tick for an allocated category
+// in a billing cycle. POST /funding {cycle, categoryId, funded}.
+func fundingHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Cycle      string `json:"cycle"`
+			CategoryID int64  `json:"categoryId"`
+			Funded     bool   `json:"funded"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		cycle := req.Cycle
+		if cycle == "" {
+			cycle = calculateBillingCycle(time.Now().Format("2006-01-02"))
+		}
+
+		cat, err := db.GetCategory(req.CategoryID)
+		if err != nil {
+			http.Error(w, "Category not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("[API] POST /funding - %s category %d (%s) funded=%v from %s",
+			cycle, req.CategoryID, cat.Name, req.Funded, r.RemoteAddr)
+
+		if req.Funded {
+			if cat.BudgetAmount == nil {
+				http.Error(w, "Category has no budget to set aside", http.StatusBadRequest)
+				return
+			}
+			if err := db.SetFunding(cycle, req.CategoryID, *cat.BudgetAmount); err != nil {
+				log.Printf("[API] Failed to set funding: %v", err)
+				http.Error(w, "Failed to set funding", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if err := db.DeleteFunding(cycle, req.CategoryID); err != nil {
+				log.Printf("[API] Failed to delete funding: %v", err)
+				http.Error(w, "Failed to clear funding", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	}
+}
+
+// salaryHandler updates the configured monthly salary. PUT /salary {salary}.
+func salaryHandler(db *DatabaseClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Salary float64 `json:"salary"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.Salary <= 0 {
+			http.Error(w, "Salary must be greater than 0", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("[API] PUT /salary - set to %.2f from %s", req.Salary, r.RemoteAddr)
+		if err := db.SetSalary(req.Salary); err != nil {
+			log.Printf("[API] Failed to set salary: %v", err)
+			http.Error(w, "Failed to set salary", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 	}
 }
 

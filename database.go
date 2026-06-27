@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,10 @@ type Category struct {
 	CreatedAt         string   `json:"createdAt"`
 	Type              string   `json:"type"`
 	BudgetAmount      *float64 `json:"budgetAmount"`
+	// Tracking is how spend is measured for the category:
+	//   "actual"    — real transactions accumulate against the budget (default)
+	//   "allocated" — funded by a per-cycle tick-off ("set aside"), counted at budget
+	Tracking string `json:"tracking"`
 }
 
 func floatPtr(v float64) *float64 { return &v }
@@ -121,6 +126,30 @@ func (c *DatabaseClient) runMigrations() error {
 	if err := c.addColumnIfNotExists("categories", "budget_amount REAL"); err != nil {
 		return fmt.Errorf("failed to add budget_amount column: %w", err)
 	}
+	if err := c.addColumnIfNotExists("categories", "tracking TEXT NOT NULL DEFAULT 'actual'"); err != nil {
+		return fmt.Errorf("failed to add tracking column: %w", err)
+	}
+
+	// cycle_funding records a "set aside" tick for an allocated category in a
+	// given billing cycle. One row = funded this cycle; amount snapshots the
+	// category's budget at tick time so later budget edits don't rewrite history.
+	if _, err := c.db.Exec(`CREATE TABLE IF NOT EXISTS cycle_funding (
+		cycle TEXT NOT NULL,
+		category_id INTEGER NOT NULL,
+		amount REAL NOT NULL,
+		funded_at TEXT NOT NULL,
+		PRIMARY KEY (cycle, category_id)
+	)`); err != nil {
+		return fmt.Errorf("cycle_funding migration failed: %w", err)
+	}
+
+	// settings is a tiny key/value store (currently just monthly_salary).
+	if _, err := c.db.Exec(`CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("settings migration failed: %w", err)
+	}
 
 	if err := c.seedCategories(); err != nil {
 		return fmt.Errorf("failed to seed categories: %w", err)
@@ -151,6 +180,87 @@ func (c *DatabaseClient) runMigrations() error {
 		return fmt.Errorf("failed to run data migrations: %w", err)
 	}
 
+	if err := c.runBudgetingSetup(); err != nil {
+		return fmt.Errorf("failed to run budgeting setup: %w", err)
+	}
+
+	return nil
+}
+
+// runBudgetingSetup applies the salary-budget model (fixed / spending / goals,
+// per-category tracking + targets) ONCE, guarded by a settings flag, so that
+// afterwards the user's bucket moves and budget edits persist across reboots.
+// It converges both fresh and existing databases onto the June 2026 budget.
+func (c *DatabaseClient) runBudgetingSetup() error {
+	done, _ := c.GetSetting("budgeting_setup_v1")
+	if done == "1" {
+		return nil
+	}
+
+	// Canonical budget lines. tracking: "allocated" = set-aside tick-off,
+	// "actual" = real transactions. Goals are a separate, non-"spent" bucket.
+	cats := []struct {
+		name     string
+		emoji    string
+		catType  string // fixed | wants | goal | other
+		tracking string
+		budget   *float64
+	}{
+		// Fixed — set aside
+		{"Rent", "🏠", "fixed", "allocated", floatPtr(9000)},
+		{"Car loan", "🚙", "fixed", "allocated", floatPtr(1742)},
+		{"Family support", "👨‍👩‍👧", "fixed", "allocated", floatPtr(1469)},
+		{"Therapy", "🧠", "fixed", "allocated", floatPtr(1762)},
+		{"Wife Electrolysis", "💆", "fixed", "allocated", floatPtr(1000)},
+		{"Cleaning", "🧹", "fixed", "allocated", floatPtr(400)},
+		{"Phone", "📞", "fixed", "allocated", floatPtr(160)},
+		{"Car insurance", "🛡️", "fixed", "allocated", floatPtr(117)},
+		{"Car registration", "📋", "fixed", "allocated", floatPtr(33)},
+		// Fixed — actual card charges
+		{"DEWA", "⚡", "fixed", "actual", floatPtr(750)},
+		{"E& Bill", "📡", "fixed", "actual", floatPtr(450)},
+		{"Subscriptions", "📱", "fixed", "actual", floatPtr(579)},
+		// Spending (stored as "wants") — all actual
+		{"Groceries", "🛒", "wants", "actual", floatPtr(2000)},
+		{"Dining Out & Delivery", "🍔", "wants", "actual", floatPtr(2000)},
+		{"Transport", "🚗", "wants", "actual", floatPtr(1100)},
+		{"Shopping & Gifts", "🛍️", "wants", "actual", floatPtr(1500)},
+		{"Healthcare", "💊", "wants", "actual", floatPtr(500)},
+		{"Beauty", "💅", "wants", "actual", floatPtr(400)},
+		{"Entertainment & Going Out", "🎬", "wants", "actual", floatPtr(1000)},
+		{"Misc / Buffer", "🗂️", "wants", "actual", floatPtr(1288)},
+		// Goals — set aside
+		{"Investment", "📈", "goal", "allocated", floatPtr(2500)},
+		{"Savings", "🏦", "goal", "allocated", floatPtr(2000)},
+		{"Emergency fund", "🆘", "goal", "allocated", floatPtr(750)},
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	for _, cat := range cats {
+		if _, err := c.db.Exec(
+			"INSERT OR IGNORE INTO categories (name, emoji, exclude_from_totals, type, budget_amount, tracking, created_at) VALUES (?, ?, 0, ?, ?, ?, ?)",
+			cat.name, cat.emoji, cat.catType, cat.budget, cat.tracking, now,
+		); err != nil {
+			return fmt.Errorf("insert budgeting category %s: %w", cat.name, err)
+		}
+		if _, err := c.db.Exec(
+			"UPDATE categories SET type=?, tracking=?, budget_amount=? WHERE name=?",
+			cat.catType, cat.tracking, cat.budget, cat.name,
+		); err != nil {
+			return fmt.Errorf("update budgeting category %s: %w", cat.name, err)
+		}
+	}
+
+	// Default the monthly salary if unset.
+	if _, err := c.db.Exec(
+		"INSERT OR IGNORE INTO settings (key, value) VALUES ('monthly_salary', '32500')",
+	); err != nil {
+		return fmt.Errorf("seed salary: %w", err)
+	}
+
+	if err := c.SetSetting("budgeting_setup_v1", "1"); err != nil {
+		return fmt.Errorf("mark budgeting setup done: %w", err)
+	}
 	return nil
 }
 
@@ -192,57 +302,8 @@ func (c *DatabaseClient) runDataMigrations() error {
 		}
 	}
 
-	// 2b. New categories (INSERT OR IGNORE)
-	newCats := []struct {
-		name    string
-		emoji   string
-		catType string
-		budget  *float64
-	}{
-		{"Therapy", "🧠", "fixed", floatPtr(1762)},
-		{"Wife Electrolysis", "💆", "fixed", floatPtr(1000)},
-		{"DEWA", "⚡", "fixed", floatPtr(750)},
-		{"E& Bill", "📡", "fixed", floatPtr(450)},
-		{"Cleaning", "🧹", "fixed", floatPtr(400)},
-		{"Phone", "📞", "fixed", floatPtr(160)},
-		{"Beauty", "💅", "wants", floatPtr(400)},
-		{"Misc / Buffer", "🗂️", "wants", floatPtr(1288)},
-	}
-	for _, cat := range newCats {
-		if _, err := c.db.Exec(
-			"INSERT OR IGNORE INTO categories (name, emoji, exclude_from_totals, type, budget_amount, created_at) VALUES (?, ?, 0, ?, ?, ?)",
-			cat.name, cat.emoji, cat.catType, cat.budget, time.Now().Format(time.RFC3339),
-		); err != nil {
-			return fmt.Errorf("insert category %s: %w", cat.name, err)
-		}
-	}
-
-	// 2c. Set types and budgets on existing categories
-	type catUpdate struct {
-		name    string
-		catType string
-		budget  *float64
-	}
-	updates := []catUpdate{
-		{"Subscriptions", "fixed", floatPtr(579)},
-		{"Groceries", "wants", floatPtr(2000)},
-		{"Dining Out & Delivery", "wants", floatPtr(2000)},
-		{"Transport", "wants", floatPtr(1100)},
-		{"Shopping & Gifts", "wants", floatPtr(1500)},
-		{"Healthcare", "wants", floatPtr(500)},
-		{"Entertainment & Going Out", "wants", floatPtr(1000)},
-		{"Cash Withdrawal", "wants", nil},
-		{"Income/Transfer", "other", nil},
-		{"Bills & Utilities", "other", nil},
-	}
-	for _, u := range updates {
-		if _, err := c.db.Exec(
-			"UPDATE categories SET type=?, budget_amount=? WHERE name=?",
-			u.catType, u.budget, u.name,
-		); err != nil {
-			return fmt.Errorf("update category %s: %w", u.name, err)
-		}
-	}
+	// Note: category type/budget/tracking assignment is handled once by
+	// runBudgetingSetup() (guarded), NOT here — so user bucket moves persist.
 
 	// 2d. Delete stale merchant rules that pointed to Bills & Utilities
 	if _, err := c.db.Exec(
@@ -313,11 +374,13 @@ func (c *DatabaseClient) GetStats(cycle string) (*StatsResponse, error) {
 	}
 	emojiMap := make(map[string]string, len(allCats))
 	typeMap := make(map[string]string, len(allCats))
+	trackingMap := make(map[string]string, len(allCats))
 	excludeMap := make(map[string]bool, len(allCats))
-	var fixedBudget, wantsBudget float64
+	var fixedBudget, wantsBudget, goalsBudget float64
 	for _, cat := range allCats {
 		emojiMap[cat.Name] = cat.Emoji
 		typeMap[cat.Name] = cat.Type
+		trackingMap[cat.Name] = cat.Tracking
 		excludeMap[cat.Name] = cat.ExcludeFromTotals
 		if cat.BudgetAmount != nil {
 			switch cat.Type {
@@ -325,9 +388,34 @@ func (c *DatabaseClient) GetStats(cycle string) (*StatsResponse, error) {
 				fixedBudget += *cat.BudgetAmount
 			case "wants":
 				wantsBudget += *cat.BudgetAmount
+			case "goal":
+				goalsBudget += *cat.BudgetAmount
 			}
 		}
 	}
+
+	// Per-cycle "set aside" funding for allocated categories.
+	funded, err := c.GetFunding(currentCycle)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get funding: %w", err)
+	}
+	fundedIDs := make([]int64, 0, len(funded))
+	var fixedAllocated, goalsFunded float64
+	for _, cat := range allCats {
+		amt, ok := funded[cat.ID]
+		if !ok {
+			continue
+		}
+		fundedIDs = append(fundedIDs, cat.ID)
+		switch cat.Type {
+		case "fixed":
+			fixedAllocated += amt
+		case "goal":
+			goalsFunded += amt
+		}
+	}
+
+	salary := c.GetSalary()
 
 	// Query total and count
 	var total float64
@@ -359,8 +447,15 @@ func (c *DatabaseClient) GetStats(cycle string) (*StatsResponse, error) {
 			Categories:          []CategoryStats{},
 			CategoryDefinitions: allCats,
 			AvailableCycles:     availableCycles,
+			Salary:              salary,
+			FixedTotal:          fixedAllocated,
+			WantsTotal:          0,
+			GoalsFunded:         goalsFunded,
+			SalarySpent:         fixedAllocated,
 			FixedBudget:         fixedBudget,
-			WantsBudget: wantsBudget,
+			WantsBudget:         wantsBudget,
+			GoalsBudget:         goalsBudget,
+			FundedCategoryIDs:   fundedIDs,
 		}, nil
 	}
 
@@ -423,19 +518,26 @@ func (c *DatabaseClient) GetStats(cycle string) (*StatsResponse, error) {
 		categories[i].Transactions = transactions
 	}
 
-	// Compute fixed/wants spending totals
-	var fixedTotal, wantsTotal float64
+	// Compute fixed/spending totals. Allocated (set-aside) categories count via
+	// their funding ticks (fixedAllocated, computed above); actual categories
+	// count via real transactions. Spending (wants) is always transaction-driven.
+	var fixedActualTotal, wantsTotal float64
 	for _, cat := range categories {
 		if excludeMap[cat.Category] {
 			continue
 		}
 		switch typeMap[cat.Category] {
 		case "fixed":
-			fixedTotal += cat.Total
+			if trackingMap[cat.Category] != "allocated" {
+				fixedActualTotal += cat.Total
+			}
 		case "wants":
 			wantsTotal += cat.Total
 		}
 	}
+	fixedTotal := fixedActualTotal + fixedAllocated
+	// "Spent from salary" excludes goals (savings is still your money).
+	salarySpent := fixedTotal + wantsTotal
 
 	// Sort categories by total (descending)
 	sort.Slice(categories, func(i, j int) bool {
@@ -521,10 +623,15 @@ func (c *DatabaseClient) GetStats(cycle string) (*StatsResponse, error) {
 		AllTransactions:     allTransactions,
 		CategoryDefinitions: allCats,
 		AvailableCycles:     availableCycles,
+		Salary:              salary,
 		FixedTotal:          fixedTotal,
-		WantsTotal:  wantsTotal,
+		WantsTotal:          wantsTotal,
+		GoalsFunded:         goalsFunded,
+		SalarySpent:         salarySpent,
 		FixedBudget:         fixedBudget,
-		WantsBudget: wantsBudget,
+		WantsBudget:         wantsBudget,
+		GoalsBudget:         goalsBudget,
+		FundedCategoryIDs:   fundedIDs,
 	}, nil
 }
 
@@ -1006,7 +1113,7 @@ func (c *DatabaseClient) FindMatchingRule(description string) (*MerchantRule, er
 
 func (c *DatabaseClient) GetAllCategories() ([]Category, error) {
 	rows, err := c.db.Query(
-		"SELECT id, name, emoji, exclude_from_totals, created_at, type, budget_amount FROM categories ORDER BY id ASC",
+		"SELECT id, name, emoji, exclude_from_totals, created_at, type, budget_amount, tracking FROM categories ORDER BY id ASC",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query categories: %w", err)
@@ -1019,7 +1126,8 @@ func (c *DatabaseClient) GetAllCategories() ([]Category, error) {
 		var excl int
 		var catType sql.NullString
 		var budget sql.NullFloat64
-		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Emoji, &excl, &cat.CreatedAt, &catType, &budget); err != nil {
+		var tracking sql.NullString
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Emoji, &excl, &cat.CreatedAt, &catType, &budget, &tracking); err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
 		cat.ExcludeFromTotals = excl == 1
@@ -1032,12 +1140,17 @@ func (c *DatabaseClient) GetAllCategories() ([]Category, error) {
 			v := budget.Float64
 			cat.BudgetAmount = &v
 		}
+		if tracking.Valid && tracking.String != "" {
+			cat.Tracking = tracking.String
+		} else {
+			cat.Tracking = "actual"
+		}
 		categories = append(categories, cat)
 	}
 	return categories, rows.Err()
 }
 
-func (c *DatabaseClient) CreateCategory(name, emoji string, excludeFromTotals bool, catType string, budgetAmount *float64) (*Category, error) {
+func (c *DatabaseClient) CreateCategory(name, emoji string, excludeFromTotals bool, catType string, budgetAmount *float64, tracking string) (*Category, error) {
 	excl := 0
 	if excludeFromTotals {
 		excl = 1
@@ -1045,9 +1158,12 @@ func (c *DatabaseClient) CreateCategory(name, emoji string, excludeFromTotals bo
 	if catType == "" {
 		catType = "wants"
 	}
+	if tracking != "allocated" {
+		tracking = "actual"
+	}
 	result, err := c.db.Exec(
-		"INSERT INTO categories (name, emoji, exclude_from_totals, type, budget_amount, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-		name, emoji, excl, catType, budgetAmount, time.Now().Format(time.RFC3339),
+		"INSERT INTO categories (name, emoji, exclude_from_totals, type, budget_amount, tracking, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		name, emoji, excl, catType, budgetAmount, tracking, time.Now().Format(time.RFC3339),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create category: %w", err)
@@ -1063,11 +1179,12 @@ func (c *DatabaseClient) CreateCategory(name, emoji string, excludeFromTotals bo
 		ExcludeFromTotals: excludeFromTotals,
 		Type:              catType,
 		BudgetAmount:      budgetAmount,
+		Tracking:          tracking,
 		CreatedAt:         time.Now().Format(time.RFC3339),
 	}, nil
 }
 
-func (c *DatabaseClient) UpdateCategory(id int64, name, emoji string, excludeFromTotals bool, catType string, budgetAmount *float64) error {
+func (c *DatabaseClient) UpdateCategory(id int64, name, emoji string, excludeFromTotals bool, catType string, budgetAmount *float64, tracking string) error {
 	var oldName string
 	err := c.db.QueryRow("SELECT name FROM categories WHERE id = ?", id).Scan(&oldName)
 	if err == sql.ErrNoRows {
@@ -1084,6 +1201,9 @@ func (c *DatabaseClient) UpdateCategory(id int64, name, emoji string, excludeFro
 	if catType == "" {
 		catType = "wants"
 	}
+	if tracking != "allocated" {
+		tracking = "actual"
+	}
 
 	tx, err := c.db.Begin()
 	if err != nil {
@@ -1092,8 +1212,8 @@ func (c *DatabaseClient) UpdateCategory(id int64, name, emoji string, excludeFro
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		"UPDATE categories SET name=?, emoji=?, exclude_from_totals=?, type=?, budget_amount=? WHERE id=?",
-		name, emoji, excl, catType, budgetAmount, id,
+		"UPDATE categories SET name=?, emoji=?, exclude_from_totals=?, type=?, budget_amount=?, tracking=? WHERE id=?",
+		name, emoji, excl, catType, budgetAmount, tracking, id,
 	); err != nil {
 		return fmt.Errorf("failed to update category: %w", err)
 	}
@@ -1138,6 +1258,106 @@ func (c *DatabaseClient) SetCategoryTarget(id int64, amount *float64) error {
 		return fmt.Errorf("category not found")
 	}
 	return nil
+}
+
+// --- Settings ---
+
+func (c *DatabaseClient) GetSetting(key string) (string, error) {
+	var value string
+	err := c.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get setting %s: %w", key, err)
+	}
+	return value, nil
+}
+
+func (c *DatabaseClient) SetSetting(key, value string) error {
+	_, err := c.db.Exec(
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+		key, value,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set setting %s: %w", key, err)
+	}
+	return nil
+}
+
+// GetSalary returns the configured monthly salary, defaulting to 32500.
+func (c *DatabaseClient) GetSalary() float64 {
+	v, err := c.GetSetting("monthly_salary")
+	if err != nil || v == "" {
+		return 32500
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 32500
+	}
+	return f
+}
+
+func (c *DatabaseClient) SetSalary(amount float64) error {
+	return c.SetSetting("monthly_salary", strconv.FormatFloat(amount, 'f', -1, 64))
+}
+
+// --- Per-cycle funding (set-aside ticks for allocated categories) ---
+
+// GetFunding returns category_id → funded amount for a billing cycle.
+func (c *DatabaseClient) GetFunding(cycle string) (map[int64]float64, error) {
+	rows, err := c.db.Query("SELECT category_id, amount FROM cycle_funding WHERE cycle = ?", cycle)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query funding: %w", err)
+	}
+	defer rows.Close()
+
+	funded := make(map[int64]float64)
+	for rows.Next() {
+		var id int64
+		var amount float64
+		if err := rows.Scan(&id, &amount); err != nil {
+			return nil, fmt.Errorf("failed to scan funding: %w", err)
+		}
+		funded[id] = amount
+	}
+	return funded, rows.Err()
+}
+
+// SetFunding marks an allocated category as funded for a cycle, snapshotting amount.
+func (c *DatabaseClient) SetFunding(cycle string, categoryID int64, amount float64) error {
+	_, err := c.db.Exec(
+		`INSERT INTO cycle_funding (cycle, category_id, amount, funded_at) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(cycle, category_id) DO UPDATE SET amount = excluded.amount, funded_at = excluded.funded_at`,
+		cycle, categoryID, amount, time.Now().Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set funding: %w", err)
+	}
+	return nil
+}
+
+// DeleteFunding clears the funded tick for a category in a cycle.
+func (c *DatabaseClient) DeleteFunding(cycle string, categoryID int64) error {
+	_, err := c.db.Exec("DELETE FROM cycle_funding WHERE cycle = ? AND category_id = ?", cycle, categoryID)
+	if err != nil {
+		return fmt.Errorf("failed to delete funding: %w", err)
+	}
+	return nil
+}
+
+// GetCategory returns a single category by id.
+func (c *DatabaseClient) GetCategory(id int64) (*Category, error) {
+	cats, err := c.GetAllCategories()
+	if err != nil {
+		return nil, err
+	}
+	for i := range cats {
+		if cats[i].ID == id {
+			return &cats[i], nil
+		}
+	}
+	return nil, fmt.Errorf("category not found")
 }
 
 func (c *DatabaseClient) Close() error {

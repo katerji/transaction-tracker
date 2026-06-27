@@ -10,15 +10,16 @@ func TestGetAllCategories_ReturnsSeededDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAllCategories failed: %v", err)
 	}
-	// 11 seeded + 8 new from data migrations - 1 Travel (deleted, no transactions) = 18
-	if len(cats) != 18 {
-		t.Errorf("expected 18 categories after migrations, got %d", len(cats))
+	// 11 seeded - 1 Travel (deleted, unused) = 10 base, + 16 new budgeting-setup
+	// categories (fixed set-aside lines, Beauty, Misc/Buffer, and the 3 goals) = 26
+	if len(cats) != 26 {
+		t.Errorf("expected 26 categories after migrations, got %d", len(cats))
 	}
 }
 
 func TestCreateCategory_Success(t *testing.T) {
 	db := setupTestDB(t)
-	cat, err := db.CreateCategory("Fitness", "🏋️", false, "wants", nil)
+	cat, err := db.CreateCategory("Fitness", "🏋️", false, "wants", nil, "actual")
 	if err != nil {
 		t.Fatalf("CreateCategory failed: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestCreateCategory_Success(t *testing.T) {
 
 func TestCreateCategory_DuplicateName(t *testing.T) {
 	db := setupTestDB(t)
-	_, err := db.CreateCategory("Groceries", "🛒", false, "wants", nil)
+	_, err := db.CreateCategory("Groceries", "🛒", false, "wants", nil, "actual")
 	if err == nil {
 		t.Error("expected error for duplicate category name, got nil")
 	}
@@ -74,7 +75,7 @@ func TestUpdateCategory_CascadesRename(t *testing.T) {
 	}
 
 	// Rename Groceries → Food
-	if err := db.UpdateCategory(grocID, "Food", "🥘", false, "wants", nil); err != nil {
+	if err := db.UpdateCategory(grocID, "Food", "🥘", false, "wants", nil, "actual"); err != nil {
 		t.Fatalf("UpdateCategory failed: %v", err)
 	}
 
@@ -122,7 +123,7 @@ func TestDeleteCategory_AllowedWithTransactions(t *testing.T) {
 func TestDeleteCategory_Success(t *testing.T) {
 	db := setupTestDB(t)
 
-	cat, err := db.CreateCategory("Temporary", "🗑️", false, "wants", nil)
+	cat, err := db.CreateCategory("Temporary", "🗑️", false, "wants", nil, "actual")
 	if err != nil {
 		t.Fatalf("CreateCategory failed: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestDeleteCategory_NotFound(t *testing.T) {
 func TestSetCategoryTarget_SetEditAndRemove(t *testing.T) {
 	db := setupTestDB(t)
 
-	cat, err := db.CreateCategory("Shopping Target", "🛍️", false, "wants", nil)
+	cat, err := db.CreateCategory("Shopping Target", "🛍️", false, "wants", nil, "actual")
 	if err != nil {
 		t.Fatalf("CreateCategory failed: %v", err)
 	}

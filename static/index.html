@@ -98,64 +98,91 @@
         <button @click="loadDashboard()" class="text-primary text-sm hover:underline">Refresh</button>
       </div>
 
-      <!-- Empty State -->
-      <template x-if="stats && stats.count === 0">
-        <div class="text-center py-16 text-gray-500">
-          <div class="text-5xl mb-3">&#128202;</div>
-          <h3 class="text-lg font-semibold text-gray-400">No Transactions Yet</h3>
-          <p class="mt-2 text-sm">Tap + to add your first expense</p>
-        </div>
-      </template>
-
-      <template x-if="stats && stats.count > 0">
+      <template x-if="stats">
         <div>
-          <!-- Hero Card -->
+          <!-- Hero: Spending Left -->
           <div class="bg-hero-gradient text-white p-6 rounded-2xl mb-5 shadow-lg">
-            <div class="text-sm opacity-90 mb-1">Total Spent</div>
-            <div class="text-3xl font-bold mb-1" x-text="formatCurrency(stats.total)"></div>
+            <div class="text-sm opacity-90 mb-1">Spending left this cycle</div>
+            <div class="text-3xl font-bold mb-1"
+                 x-text="formatCurrency(spendingLeft)"></div>
             <div class="text-xs opacity-80">
-              <span x-text="stats.count"></span> transaction<span x-show="stats.count !== 1">s</span>
+              <span x-text="formatCurrency(spendingSpent)"></span> of
+              <span x-text="formatCurrency(spendingBudget)"></span> spent
               &middot; <span x-text="stats.cycleLabel"></span>
+            </div>
+            <div class="mt-3 h-1.5 bg-white/25 rounded-full overflow-hidden">
+              <div class="h-full rounded-full bg-white cat-progress"
+                   :style="spendingBudget > 0 ? 'width:' + Math.min(Math.round(spendingSpent / spendingBudget * 100), 100) + '%' : 'width:0%'"></div>
             </div>
           </div>
 
-          <!-- Budget Summary Card -->
-          <div class="bg-card rounded-2xl border border-card-border p-4 mb-5 space-y-3">
-            <!-- Wants row -->
-            <div>
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-xs font-medium text-gray-400">Wants</span>
-                <span class="text-xs font-semibold"
-                      :class="stats.wants_total > stats.wants_budget ? 'text-red-400' : 'text-gray-100'"
-                      x-text="formatCurrency(stats.wants_total) + ' / ' + formatCurrency(stats.wants_budget)">
-                </span>
-              </div>
-              <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full rounded-full cat-progress"
-                     :class="stats.wants_total > stats.wants_budget ? 'bg-red-500' : 'bg-primary'"
-                     :style="stats.wants_budget > 0 ? 'width:' + Math.min(Math.round(stats.wants_total / stats.wants_budget * 100), 100) + '%' : 'width:0%'">
-                </div>
-              </div>
+          <!-- Salary Allocation Overview -->
+          <div class="bg-card rounded-2xl border border-card-border p-4 mb-5">
+            <div class="flex justify-between items-center mb-3">
+              <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Salary Allocation</span>
+              <button @click="openSalaryEdit()" class="text-xs text-primary font-medium hover:underline"
+                      x-text="formatCurrency(salary)"></button>
             </div>
-            <!-- Fixed row -->
-            <div>
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-xs font-medium text-gray-400">Fixed</span>
-                <span class="text-xs font-semibold"
-                      :class="stats.fixed_total > stats.fixed_budget ? 'text-red-400' : 'text-gray-100'"
-                      x-text="formatCurrency(stats.fixed_total) + ' / ' + formatCurrency(stats.fixed_budget)">
-                </span>
-              </div>
-              <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full rounded-full cat-progress"
-                     :class="stats.fixed_total > stats.fixed_budget ? 'bg-red-500' : 'bg-primary'"
-                     :style="stats.fixed_budget > 0 ? 'width:' + Math.min(Math.round(stats.fixed_total / stats.fixed_budget * 100), 100) + '%' : 'width:0%'">
-                </div>
-              </div>
+            <div class="flex h-2.5 rounded-full overflow-hidden bg-gray-700 mb-3">
+              <div class="h-full bg-primary cat-progress" :style="'width:' + (salary > 0 ? Math.min(fixedTotal / salary * 100, 100) : 0) + '%'"></div>
+              <div class="h-full bg-teal cat-progress" :style="'width:' + (salary > 0 ? Math.min(spendingSpent / salary * 100, 100) : 0) + '%'"></div>
+              <div class="h-full bg-purple-500 cat-progress" :style="'width:' + (salary > 0 ? Math.min(goalsFunded / salary * 100, 100) : 0) + '%'"></div>
             </div>
+            <div class="grid grid-cols-2 gap-y-1.5 text-xs">
+              <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary"></span><span class="text-gray-400">Fixed</span></div>
+              <div class="text-right text-gray-200" x-text="formatCurrency(fixedTotal) + ' / ' + formatCurrency(fixedBudget)"></div>
+              <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal"></span><span class="text-gray-400">Spending</span></div>
+              <div class="text-right text-gray-200" x-text="formatCurrency(spendingSpent) + ' / ' + formatCurrency(spendingBudget)"></div>
+              <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-purple-500"></span><span class="text-gray-400">Goals</span></div>
+              <div class="text-right text-gray-200" x-text="formatCurrency(goalsFunded) + ' / ' + formatCurrency(goalsBudget)"></div>
+            </div>
+            <div class="border-t border-card-border mt-3 pt-3 flex justify-between text-sm">
+              <span class="text-gray-400">Spent from salary</span>
+              <span class="font-semibold text-gray-100" x-text="formatCurrency(salarySpent)"></span>
+            </div>
+            <div class="flex justify-between text-xs mt-1">
+              <span class="text-gray-500" x-text="salaryRemaining >= 0 ? 'Unallocated' : 'Over-allocated'"></span>
+              <span :class="salaryRemaining < 0 ? 'text-red-400' : 'text-gray-400'"
+                    x-text="formatCurrency(Math.abs(salaryRemaining))"></span>
+            </div>
+          </div>
+
+          <!-- Set aside this cycle (tick-off allocations) -->
+          <div x-show="allocatedItems.length > 0" class="bg-card rounded-2xl border border-card-border p-4 mb-5">
+            <div class="flex justify-between items-center mb-3">
+              <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Set aside this cycle</span>
+              <span class="text-xs text-gray-500"><span x-text="allocatedFundedCount"></span>/<span x-text="allocatedItems.length"></span></span>
+            </div>
+            <div class="space-y-1.5">
+              <template x-for="item in allocatedItems" :key="item.id">
+                <button @click="toggleFunding(item)"
+                        class="w-full flex items-center gap-3 p-2 rounded-lg transition active:scale-[0.99]"
+                        :class="item.funded ? 'bg-primary/10' : 'hover:bg-gray-700/40'">
+                  <span class="w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 border transition-colors"
+                        :class="item.funded ? 'bg-primary border-primary text-white' : 'border-gray-600 text-transparent'">&#10003;</span>
+                  <span class="text-lg shrink-0" x-text="item.emoji"></span>
+                  <span class="flex-1 text-left text-sm min-w-0 flex items-center gap-1.5">
+                    <span class="text-gray-100 truncate" x-text="item.name"></span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded-full shrink-0"
+                          :class="item.type === 'goal' ? 'bg-purple-500/20 text-purple-300' : 'bg-gray-700 text-gray-400'"
+                          x-text="item.type === 'goal' ? 'Goal' : 'Fixed'"></span>
+                  </span>
+                  <span class="text-sm font-semibold shrink-0"
+                        :class="item.funded ? 'text-gray-100' : 'text-gray-500'"
+                        x-text="formatCurrency(item.budgetAmount || 0)"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- No transactions hint -->
+          <div x-show="stats.count === 0" class="text-center py-8 text-gray-500 mb-3">
+            <div class="text-4xl mb-2">&#128202;</div>
+            <p class="text-sm">No transactions yet this cycle. Tap + to add one.</p>
           </div>
 
           <!-- Quick Stats Grid -->
+          <div x-show="stats.count > 0">
           <div class="grid grid-cols-2 gap-3 mb-5">
             <!-- Today's Spend -->
             <div class="bg-card rounded-xl p-4 shadow-sm border border-card-border">
@@ -204,6 +231,7 @@
               </template>
             </div>
           </div>
+          </div><!-- end stats.count > 0 -->
 
           <!-- Last updated -->
           <div class="text-center text-[10px] text-gray-600 mt-2">
@@ -368,7 +396,7 @@
 
         <!-- Wants Section -->
         <div x-show="wantsCategories.length > 0">
-          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">Wants</div>
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">Spending</div>
           <div class="space-y-3">
             <template x-for="(cat, catIdx) in wantsCategories" :key="cat.name">
               <div class="bg-card rounded-xl shadow-sm border border-card-border overflow-hidden">
@@ -1070,12 +1098,21 @@
                  class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-primary transition">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-400 mb-1.5">Type</label>
+          <label class="block text-sm font-medium text-gray-400 mb-1.5">Bucket</label>
           <select x-model="catAddForm.type"
                   class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 focus:outline-none focus:border-primary transition appearance-none">
             <option value="fixed">Fixed</option>
-            <option value="wants">Wants</option>
+            <option value="wants">Spending</option>
+            <option value="goal">Goal</option>
             <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-400 mb-1.5">Tracking</label>
+          <select x-model="catAddForm.tracking"
+                  class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 focus:outline-none focus:border-primary transition appearance-none">
+            <option value="actual">As I spend (transactions)</option>
+            <option value="allocated">Set aside (tick off each cycle)</option>
           </select>
         </div>
         <div>
@@ -1124,12 +1161,21 @@
                  class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-primary transition">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-400 mb-1.5">Type</label>
+          <label class="block text-sm font-medium text-gray-400 mb-1.5">Bucket</label>
           <select x-model="catEditForm.type"
                   class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 focus:outline-none focus:border-primary transition appearance-none">
             <option value="fixed">Fixed</option>
-            <option value="wants">Wants</option>
+            <option value="wants">Spending</option>
+            <option value="goal">Goal</option>
             <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-400 mb-1.5">Tracking</label>
+          <select x-model="catEditForm.tracking"
+                  class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 focus:outline-none focus:border-primary transition appearance-none">
+            <option value="actual">As I spend (transactions)</option>
+            <option value="allocated">Set aside (tick off each cycle)</option>
           </select>
         </div>
         <div>
@@ -1201,6 +1247,31 @@
         <button @click="confirmApplyAll()" :disabled="applyAllLoading"
                 class="flex-1 py-3 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-dark transition disabled:opacity-50"
                 x-text="applyAllLoading ? 'Applying...' : 'Re-apply All'"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SALARY EDIT MODAL ==================== -->
+  <div x-cloak x-show="salaryEditOpen" x-transition.opacity
+       @click.self="closeSalaryEdit()"
+       class="fixed inset-0 bg-black/70 z-[1000] flex items-end md:items-center justify-center">
+    <div x-show="salaryEditOpen"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-y-full md:translate-y-0 md:scale-95 md:opacity-0"
+         x-transition:enter-end="translate-y-0 md:scale-100 md:opacity-100"
+         x-init="initModalSwipe($el)"
+         class="bg-card rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-[500px] md:w-[90%] shadow-2xl relative modal-sheet">
+      <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto -mt-2 mb-5 md:hidden cursor-grab active:cursor-grabbing modal-drag-handle"></div>
+      <div class="text-xl font-semibold text-gray-100 mb-5 modal-header">Monthly Salary</div>
+      <div>
+        <label class="block text-sm font-medium text-gray-400 mb-1.5">Salary (AED)</label>
+        <input x-model="salaryDraft" type="number" step="0.01" min="0" inputmode="decimal" placeholder="32500"
+               class="w-full px-3 py-2.5 border-2 border-card-border bg-surface rounded-xl text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-primary transition">
+        <p class="text-xs text-gray-500 mt-2">Used as the denominator for the salary allocation overview.</p>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button @click="closeSalaryEdit()" class="flex-1 py-3 bg-gray-700 text-gray-300 rounded-xl text-sm font-semibold hover:bg-gray-600 transition">Cancel</button>
+        <button @click="saveSalary()" class="flex-1 py-3 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-dark transition">Save</button>
       </div>
     </div>
   </div>

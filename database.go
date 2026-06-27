@@ -297,9 +297,17 @@ func (c *DatabaseClient) SaveTransaction(tx Transaction) (int64, error) {
 	return id, nil
 }
 
-func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
-	currentCycle := calculateBillingCycle(time.Now().Format("2006-01-02"))
+func (c *DatabaseClient) GetStats(cycle string) (*StatsResponse, error) {
+	currentCycle := cycle
+	if currentCycle == "" {
+		currentCycle = calculateBillingCycle(time.Now().Format("2006-01-02"))
+	}
 	log.Printf("[Database] Fetching stats for billing cycle: %s", currentCycle)
+
+	availableCycles, err := c.GetAvailableCycles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get available cycles: %w", err)
+	}
 
 	// Fetch all categories and build lookup maps
 	allCats, err := c.GetAllCategories()
@@ -352,6 +360,7 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 			Count:               0,
 			Categories:          []CategoryStats{},
 			CategoryDefinitions: allCats,
+			AvailableCycles:     availableCycles,
 			FixedBudget:         fixedBudget,
 			WantsBudget: wantsBudget,
 		}, nil
@@ -512,11 +521,46 @@ func (c *DatabaseClient) GetStats() (*StatsResponse, error) {
 		LastTransaction:     lastTransaction,
 		AllTransactions:     allTransactions,
 		CategoryDefinitions: allCats,
+		AvailableCycles:     availableCycles,
 		FixedTotal:          fixedTotal,
 		WantsTotal:  wantsTotal,
 		FixedBudget:         fixedBudget,
 		WantsBudget: wantsBudget,
 	}, nil
+}
+
+// GetAvailableCycles returns the distinct billing cycles that have transactions,
+// sorted chronologically newest-first. Cycles are stored as "Jan 2006" strings,
+// so they must be parsed to sort correctly (raw string sort is alphabetical).
+func (c *DatabaseClient) GetAvailableCycles() ([]string, error) {
+	rows, err := c.db.Query(`SELECT DISTINCT billing_cycle FROM transactions`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get available cycles: %w", err)
+	}
+	defer rows.Close()
+
+	var cycles []string
+	for rows.Next() {
+		var cycle string
+		if err := rows.Scan(&cycle); err != nil {
+			return nil, fmt.Errorf("failed to scan cycle: %w", err)
+		}
+		cycles = append(cycles, cycle)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cycles: %w", err)
+	}
+
+	sort.Slice(cycles, func(i, j int) bool {
+		ti, errI := time.Parse("Jan 2006", cycles[i])
+		tj, errJ := time.Parse("Jan 2006", cycles[j])
+		if errI != nil || errJ != nil {
+			return cycles[i] > cycles[j]
+		}
+		return ti.After(tj)
+	})
+
+	return cycles, nil
 }
 
 func (c *DatabaseClient) GetAllTransactionsGroupedByCycle() ([]Transaction, error) {

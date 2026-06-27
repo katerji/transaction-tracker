@@ -51,6 +51,7 @@ type StatsResponse struct {
 	LastTransaction     *TransactionSummary `json:"lastTransaction,omitempty"`
 	AllTransactions     []Transaction       `json:"allTransactions,omitempty"`
 	CategoryDefinitions []Category          `json:"categoryDefinitions,omitempty"`
+	AvailableCycles     []string            `json:"availableCycles,omitempty"`
 	FixedTotal   float64 `json:"fixed_total"`
 	WantsTotal   float64 `json:"wants_total"`
 	FixedBudget  float64 `json:"fixed_budget"`
@@ -316,7 +317,8 @@ func dashboardHandler(db *DatabaseClient) http.HandlerFunc {
 			return
 		}
 
-		stats, err := db.GetStats()
+		cycle := r.URL.Query().Get("cycle")
+		stats, err := db.GetStats(cycle)
 		if err != nil {
 			log.Printf("[API] Failed to get stats: %v", err)
 			http.Error(w, "Failed to retrieve statistics", http.StatusInternalServerError)

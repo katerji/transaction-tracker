@@ -1,7 +1,8 @@
 // Backend API communication
 
-export async function fetchDashboard() {
-  const res = await fetch('/dashboard');
+export async function fetchDashboard(cycle) {
+  const url = cycle ? '/dashboard?cycle=' + encodeURIComponent(cycle) : '/dashboard';
+  const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Failed to load stats');

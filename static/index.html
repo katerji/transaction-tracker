@@ -87,7 +87,15 @@
       <div class="flex justify-between items-center mb-4">
         <div>
           <h1 class="text-xl font-bold text-gray-100">Transaction Tracker</h1>
-          <p class="text-xs text-gray-500" x-text="stats?.cycle || ''"></p>
+          <div class="flex items-center gap-1 mt-0.5">
+            <button @click="prevCycle()" :disabled="!canGoOlder"
+              class="text-gray-400 hover:text-primary disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-default p-0.5"
+              aria-label="Previous cycle">&lsaquo;</button>
+            <p class="text-xs text-gray-500 min-w-[64px] text-center" x-text="stats?.cycle || ''"></p>
+            <button @click="nextCycle()" :disabled="!canGoNewer"
+              class="text-gray-400 hover:text-primary disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-default p-0.5"
+              aria-label="Next cycle">&rsaquo;</button>
+          </div>
         </div>
         <button @click="loadDashboard()" class="text-primary text-sm hover:underline">Refresh</button>
       </div>

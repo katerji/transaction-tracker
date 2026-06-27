@@ -25,6 +25,7 @@ go run *.go             # starts on :8080
 ## Conventions
 - All monetary amounts are in AED — currency conversion happens in the OpenAI prompt
 - Billing cycle runs from the 23rd to the 22nd of each month
+- `/dashboard` is scoped to one billing cycle via `?cycle=<start-month key, e.g. "Jun 2026">` (defaults to the current cycle) — it returns stats and `allTransactions` for that period only, plus `availableCycles`, a server-generated newest-first list of selectable periods down to a Jan 2026 floor (each labeled by its end month, e.g. cycle `Jun 2026` → label `July 2026`). The dashboard header has a period picker. See `selectableCycles`/`cycleDisplayLabel` in `main.go` and `GetStats(cycle)` in `database.go`.
 - Categories with `exclude_from_totals = 1` are excluded from spending totals (default: `Income/Transfer`)
 - Transactions are deduplicated by (description, amount, transaction_date)
 - Manual entries always have confidence=100

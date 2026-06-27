@@ -33,7 +33,7 @@ Dashboard at `http://localhost:8080`.
 | `/transaction/manual` | POST | Add transaction manually |
 | `/transaction/:id` | PUT | Update a transaction |
 | `/transaction/:id` | DELETE | Delete a transaction |
-| `/dashboard` | GET | Current billing cycle stats + category definitions |
+| `/dashboard` | GET | Stats + transactions for a billing cycle (`?cycle=Jun 2026`, defaults to current) + category definitions + selectable cycles |
 | `/categories` | GET | List all categories |
 | `/categories` | POST | Create a category |
 | `/categories/:id` | PUT | Update a category (cascades rename to transactions and rules) |
@@ -80,6 +80,6 @@ Pushes to `main` automatically deploy to Fly.io via GitHub Actions.
 2. OpenAI (gpt-4o-mini) parses the text into structured data
 3. Amounts are converted to AED if in another currency
 4. Transaction is saved to SQLite with a billing cycle (23rd–22nd)
-5. Dashboard shows spending by category for the current cycle
+5. Dashboard shows spending by category for the selected billing cycle — pick a period from the header dropdown (defaults to the current cycle)
 
 Default categories: Groceries 🛒, Dining Out 🍔, Transport 🚗, Shopping 🛍️, Subscriptions 📱, Bills & Utilities 💳, Health 💊, Travel ✈️, Entertainment 🎬, Cash Withdrawal 💵, Income/Transfer 💰. Categories are fully user-manageable from the Categories tab.

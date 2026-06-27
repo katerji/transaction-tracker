@@ -144,36 +144,14 @@ export default function app() {
         this.categoryDefinitions = data.categoryDefinitions || [];
         this.categoryOptions = this.categoryDefinitions.map(c => c.name);
         this.availableCycles = data.availableCycles || [];
+        // Default the picker to the current period on first load.
+        if (!this.selectedCycle) this.selectedCycle = data.cycle;
         this.lastUpdate = new Date().toLocaleTimeString();
       } catch (e) {
         this.error = e.message;
       } finally {
         this.loading = false;
       }
-    },
-
-    // Billing cycle navigation (availableCycles is newest-first)
-    get cycleIndex() {
-      return this.availableCycles.indexOf(this.stats?.cycle);
-    },
-    get canGoNewer() {
-      return this.cycleIndex > 0;
-    },
-    get canGoOlder() {
-      const i = this.cycleIndex;
-      return i >= 0 && i < this.availableCycles.length - 1;
-    },
-    async goToCycle(cycle) {
-      if (!cycle || cycle === this.selectedCycle) return;
-      this.selectedCycle = cycle;
-      hapticFeedback('light');
-      await this.loadDashboard();
-    },
-    nextCycle() {
-      if (this.canGoNewer) this.goToCycle(this.availableCycles[this.cycleIndex - 1]);
-    },
-    prevCycle() {
-      if (this.canGoOlder) this.goToCycle(this.availableCycles[this.cycleIndex + 1]);
     },
 
     // Tab switching

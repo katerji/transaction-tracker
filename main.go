@@ -45,13 +45,14 @@ type StatsResponse struct {
 	Success             bool                `json:"success"`
 	Message             string              `json:"message"`
 	Cycle               string              `json:"cycle"`
+	CycleLabel          string              `json:"cycleLabel"`
 	Total               float64             `json:"total"`
 	Count               int                 `json:"count"`
 	Categories          []CategoryStats     `json:"categories,omitempty"`
 	LastTransaction     *TransactionSummary `json:"lastTransaction,omitempty"`
 	AllTransactions     []Transaction       `json:"allTransactions,omitempty"`
 	CategoryDefinitions []Category          `json:"categoryDefinitions,omitempty"`
-	AvailableCycles     []string            `json:"availableCycles,omitempty"`
+	AvailableCycles     []CycleOption       `json:"availableCycles,omitempty"`
 	FixedTotal   float64 `json:"fixed_total"`
 	WantsTotal   float64 `json:"wants_total"`
 	FixedBudget  float64 `json:"fixed_budget"`
@@ -641,6 +642,52 @@ func calculateBillingCycle(dateStr string) string {
 	cycleStart = time.Date(cycleStart.Year(), cycleStart.Month(), 23, 0, 0, 0, 0, time.UTC)
 
 	return cycleStart.Format("Jan 2006")
+}
+
+// cycleDisplayLabel converts an internal start-month cycle key ("Jun 2026") into
+// the end-month label shown to users ("July 2026"). A billing cycle runs from the
+// 23rd to the 22nd, so it ends in the month after its start month.
+func cycleDisplayLabel(cycle string) string {
+	t, err := time.Parse("Jan 2006", cycle)
+	if err != nil {
+		return cycle
+	}
+	return t.AddDate(0, 1, 0).Format("January 2006")
+}
+
+// CycleOption is a selectable billing period: Cycle is the internal start-month key
+// (sent back as ?cycle=), Label is the end-month string shown in the UI.
+type CycleOption struct {
+	Cycle string `json:"cycle"`
+	Label string `json:"label"`
+}
+
+// selectableCycles generates the list of billing periods offered in the dashboard
+// picker — every consecutive period from the current one down to a hard floor,
+// newest-first. The list is generated (not derived from stored data), so it rolls
+// forward automatically as time passes.
+func selectableCycles() []CycleOption {
+	current := calculateBillingCycle(time.Now().Format("2006-01-02"))
+	start, err := time.Parse("Jan 2006", current)
+	if err != nil {
+		return nil
+	}
+
+	// Floor: never show a period whose end month is before January 2026.
+	floor := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	var opts []CycleOption
+	for s := start; ; s = s.AddDate(0, -1, 0) {
+		end := s.AddDate(0, 1, 0)
+		if end.Before(floor) {
+			break
+		}
+		opts = append(opts, CycleOption{
+			Cycle: s.Format("Jan 2006"),
+			Label: end.Format("January 2006"),
+		})
+	}
+	return opts
 }
 
 func rulesHandler(db *DatabaseClient) http.HandlerFunc {

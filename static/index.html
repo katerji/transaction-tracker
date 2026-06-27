@@ -87,15 +87,12 @@
       <div class="flex justify-between items-center mb-4">
         <div>
           <h1 class="text-xl font-bold text-gray-100">Transaction Tracker</h1>
-          <div class="flex items-center gap-1 mt-0.5">
-            <button @click="prevCycle()" :disabled="!canGoOlder"
-              class="text-gray-400 hover:text-primary disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-default p-0.5"
-              aria-label="Previous cycle">&lsaquo;</button>
-            <p class="text-xs text-gray-500 min-w-[64px] text-center" x-text="stats?.cycle || ''"></p>
-            <button @click="nextCycle()" :disabled="!canGoNewer"
-              class="text-gray-400 hover:text-primary disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-default p-0.5"
-              aria-label="Next cycle">&rsaquo;</button>
-          </div>
+          <select x-model="selectedCycle" @change="loadDashboard()" aria-label="Billing period"
+            class="mt-1 bg-card border border-gray-700 text-gray-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary">
+            <template x-for="c in availableCycles" :key="c.cycle">
+              <option :value="c.cycle" x-text="c.label"></option>
+            </template>
+          </select>
         </div>
         <button @click="loadDashboard()" class="text-primary text-sm hover:underline">Refresh</button>
       </div>
@@ -117,7 +114,7 @@
             <div class="text-3xl font-bold mb-1" x-text="formatCurrency(stats.total)"></div>
             <div class="text-xs opacity-80">
               <span x-text="stats.count"></span> transaction<span x-show="stats.count !== 1">s</span>
-              &middot; <span x-text="stats.cycle"></span>
+              &middot; <span x-text="stats.cycleLabel"></span>
             </div>
           </div>
 
@@ -350,7 +347,7 @@
         <!-- Cycle Total -->
         <template x-if="stats">
           <div class="text-center mb-5 pt-2">
-            <div class="text-xs text-gray-500 mb-1" x-text="stats.cycle"></div>
+            <div class="text-xs text-gray-500 mb-1" x-text="stats.cycleLabel"></div>
             <div class="text-2xl font-bold text-gray-100" x-text="formatCurrency(stats.total)"></div>
             <div class="text-xs text-gray-500 mt-0.5">
               <span x-text="stats.count"></span> transaction<span x-show="stats.count !== 1">s</span>

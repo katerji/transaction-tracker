@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -197,6 +198,71 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// rawTextBodyRe matches a {"text": "..."} body whose string value was not
+// JSON-escaped by the client. The value is everything up to the last quote.
+var rawTextBodyRe = regexp.MustCompile(`(?s)^\s*\{\s*"text"\s*:\s*"(.*)"\s*\}\s*$`)
+
+// parseTransactionBody decodes a /transaction request body. Clients such as
+// phone automations paste raw SMS text into a JSON template without escaping
+// it, so the SMS's newlines, quotes and backslashes can make the body invalid
+// JSON. Strict JSON is tried first; if that fails the text is recovered
+// literally rather than rejecting the request.
+func parseTransactionBody(body []byte) (TransactionRequest, error) {
+	var req TransactionRequest
+	strictErr := json.Unmarshal(body, &req)
+	if strictErr == nil {
+		return req, nil
+	}
+
+	if m := rawTextBodyRe.FindSubmatch(body); m != nil {
+		return TransactionRequest{Text: string(m[1])}, nil
+	}
+
+	// Different shape (e.g. extra fields): at least escape raw control chars.
+	req = TransactionRequest{}
+	if err := json.Unmarshal(escapeControlCharsInJSONStrings(body), &req); err == nil {
+		return req, nil
+	}
+	return req, strictErr
+}
+
+// escapeControlCharsInJSONStrings escapes raw control characters (newlines,
+// tabs, ...) that appear inside JSON string literals, which are otherwise
+// rejected by encoding/json. Bytes outside strings are left untouched.
+func escapeControlCharsInJSONStrings(in []byte) []byte {
+	out := make([]byte, 0, len(in)+16)
+	inString, escaped := false, false
+	for _, c := range in {
+		switch {
+		case !inString:
+			if c == '"' {
+				inString = true
+			}
+			out = append(out, c)
+		case escaped:
+			escaped = false
+			out = append(out, c)
+		case c == '\\':
+			escaped = true
+			out = append(out, c)
+		case c == '"':
+			inString = false
+			out = append(out, c)
+		case c == '\n':
+			out = append(out, '\\', 'n')
+		case c == '\r':
+			out = append(out, '\\', 'r')
+		case c == '\t':
+			out = append(out, '\\', 't')
+		case c < 0x20:
+			out = append(out, fmt.Sprintf("\\u%04x", c)...)
+		default:
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[API] POST /transaction - New transaction request from %s", r.RemoteAddr)
@@ -207,9 +273,16 @@ func transactionHandler(openAI *OpenAIClient, db *DatabaseClient) http.HandlerFu
 			return
 		}
 
-		var req TransactionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Printf("[API] Invalid request body: %v", err)
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			log.Printf("[API] Failed to read request body: %v", err)
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		req, err := parseTransactionBody(body)
+		if err != nil {
+			log.Printf("[API] Invalid request body: %v (body=%q)", err, body)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
